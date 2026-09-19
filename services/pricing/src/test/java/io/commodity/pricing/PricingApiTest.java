@@ -268,4 +268,38 @@ class PricingApiTest {
         assertThat(count("SELECT count(*) FROM pricing.quota_revision_member m JOIN pricing.quota_revision q ON q.pqr_id = m.pqr_id"
                 + " WHERE q.quota_ref = '211.1'")).isEqualTo(40); // both revisions link all 20
     }
+
+    // PROVES the bridge from structural sharing to idempotent valuation: an assignment that did NOT change keeps the same row ids
+    // when a DIFFERENT assignment in its quota is repriced. Valuation keys are built from these ids, so they identify content.
+    @Test
+    void unchangedAssignmentsKeepTheirIdsWhenAnotherAssignmentChanges() throws Exception {
+        seed("212.1", "1", "100", "2", "100");
+        fix("212.1.1", "10");
+        var before = mvc.perform(get("/api/valuation-inputs").param("subjectRef", "212.1.1").param("subjectLevel", "ASSIGNMENT").param("asOf", "2026-09-18"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+        fix("212.1.2", "20"); // reprice the OTHER assignment: a new quota revision, but 212.1.1 is shared
+        var after = mvc.perform(get("/api/valuation-inputs").param("subjectRef", "212.1.1").param("subjectLevel", "ASSIGNMENT").param("asOf", "2026-09-18"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+        assertThat(JsonPath.<String>read(after, "$.assignments[0].parId")).isEqualTo(JsonPath.read(before, "$.assignments[0].parId"));
+        assertThat(JsonPath.<String>read(after, "$.assignments[0].components[0].pcId")).isEqualTo(JsonPath.read(before, "$.assignments[0].components[0].pcId"));
+        assertThat(JsonPath.<String>read(after, "$.pqrId")).isNotEqualTo(JsonPath.read(before, "$.pqrId")); // the quota revision moved on
+    }
+
+    @Test
+    void valuationInputsCarryApprovalAndSupportBothLevels() throws Exception {
+        seed("213.1", "1", "100", "2", "50");
+        mvc.perform(post("/api/assignments/213.1.1/approval").contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"APPROVED\"}")).andExpect(status().isCreated());
+
+        mvc.perform(get("/api/valuation-inputs").param("subjectRef", "213.1.1").param("subjectLevel", "ASSIGNMENT").param("asOf", "2026-09-18"))
+                .andExpect(jsonPath("$.assignments", hasSize(1))).andExpect(jsonPath("$.assignments[0].approved").value(true))
+                .andExpect(jsonPath("$.businessLine").value("CONCENTRATES"));
+        mvc.perform(get("/api/valuation-inputs").param("subjectRef", "213.1").param("subjectLevel", "QUOTA").param("asOf", "2026-09-18"))
+                .andExpect(jsonPath("$.assignments", hasSize(2))).andExpect(jsonPath("$.assignments[1].approved").value(false));
+        mvc.perform(get("/api/valuation-inputs").param("subjectRef", "213.1.9").param("subjectLevel", "ASSIGNMENT").param("asOf", "2026-09-18"))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/valuation-inputs").param("subjectRef", "213.1.1").param("subjectLevel", "ASSIGNMENT").param("asOf", "2026-01-01"))
+                .andExpect(status().isNotFound()); // nothing existed on that date
+    }
 }

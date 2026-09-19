@@ -1,6 +1,7 @@
 package io.commodity.trade.service;
 
 import io.commodity.contracts.lookup.BusinessDayClock;
+import io.commodity.contracts.lookup.FunctionalLineDirectory;
 import io.commodity.contracts.lookup.QuotaView;
 import io.commodity.contracts.refs.QuotaRef;
 import io.commodity.contracts.refs.TradeRef;
@@ -32,12 +33,14 @@ public class TradeService {
     private final TradeRepository trades;
     private final QuotaRepository quotas;
     private final BusinessDayClock clock;
+    private final FunctionalLineDirectory lines;
     private final JdbcTemplate jdbc;
 
-    public TradeService(TradeRepository trades, QuotaRepository quotas, BusinessDayClock clock, JdbcTemplate jdbc) {
+    public TradeService(TradeRepository trades, QuotaRepository quotas, BusinessDayClock clock, FunctionalLineDirectory lines, JdbcTemplate jdbc) {
         this.trades = trades;
         this.quotas = quotas;
         this.clock = clock;
+        this.lines = lines;
         this.jdbc = jdbc;
     }
 
@@ -52,6 +55,12 @@ public class TradeService {
         if (req.delivery() == null) throw new DomainException(400, "invalid-delivery-terms", "Delivery terms are required");
         Periodicity periodicity = Parse.enumValue(Periodicity.class, req.delivery().periodicity(), "delivery.periodicity");
 
+        // An explicit routing override must be a real line of this business line: fail now, not at valuation time.
+        if (req.functionalLine() != null && !lines.isValid(businessLine.name(), req.functionalLine())) {
+            throw new DomainException(400, "invalid-functional-line", "Not a functional line of this business line")
+                    .with("businessLine", businessLine.name()).with("functionalLine", req.functionalLine());
+        }
+
         // Plan first: if the delivery terms are invalid nothing has been numbered or written.
         List<QuotaPlanner.CustomPeriod> custom = req.delivery().periods() == null ? null : req.delivery().periods().stream()
                 .map(p -> new QuotaPlanner.CustomPeriod(p.from(), p.to(), parseQty(p.qty(), "periods.qty"))).toList();
@@ -60,7 +69,7 @@ public class TradeService {
 
         TradeRef ref = new TradeRef(jdbc.queryForObject("SELECT nextval('trade.trade_number_seq')", Long.class));
         Trade trade = trades.save(new Trade(ref.toString(), businessLine, req.deskId(), side, req.counterparty(),
-                req.commodity(), total, req.uom(), clock.currentBrd(req.deskId())));
+                req.commodity(), total, req.uom(), clock.currentBrd(req.deskId()), req.functionalLine()));
 
         List<String> quotaRefs = planned.stream().map(q -> {
             QuotaRef qref = ref.quota(q.seq());
@@ -93,7 +102,8 @@ public class TradeService {
         Trade t = getTrade(parsed.trade().toString());
         Quota q = quotas.findByTradeIdOrderBySeq(t.getId()).stream().filter(x -> x.getSeq() == parsed.seq()).findFirst()
                 .orElseThrow(() -> notFound("quota", quotaRef));
-        return new QuotaView(q.getQuotaRef(), t.getTradeRef(), t.getDeskId(), t.getBusinessLine().name(), q.getQty());
+        return new QuotaView(q.getQuotaRef(), t.getTradeRef(), t.getDeskId(), t.getBusinessLine().name(), q.getQty(),
+                t.getCreatedBrd(), t.getFunctionalLine());
     }
 
     /** Parses a quantity string and enforces the four-decimal scale rule instead of silently rounding. */

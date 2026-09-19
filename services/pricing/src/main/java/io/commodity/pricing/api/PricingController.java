@@ -1,5 +1,7 @@
 package io.commodity.pricing.api;
 
+import io.commodity.contracts.valuation.SubjectLevel;
+import io.commodity.contracts.valuation.ValuationInputs;
 import io.commodity.platform.error.DomainException;
 import io.commodity.platform.error.Parse;
 import io.commodity.pricing.domain.*;
@@ -75,6 +77,18 @@ public class PricingController {
                 .with("quotaRef", quotaRef).with("asOf", String.valueOf(asOf)));
         var q = snap.quota();
         return new PricingView(q.pqrId(), q.brd(), q.qagrId(), q.assignments().stream().map(a -> view(a, snap.approvals().get(a.assignmentRef()))).toList());
+    }
+
+    /**
+     * The inputs of a valuation as of a BRD (backs the ValuationInputsProvider port used by the gateway). Every input carries the
+     * id of the immutable row it came from, so the same request always resolves to the same ids.
+     */
+    @GetMapping("/valuation-inputs")
+    public ValuationInputs valuationInputs(@RequestParam String subjectRef, @RequestParam String subjectLevel,
+                                           @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        SubjectLevel level = Parse.enumValue(SubjectLevel.class, subjectLevel, "subjectLevel");
+        return service.valuationInputs(subjectRef, level, asOf).orElseThrow(() -> new DomainException(404, "not-found",
+                "No pricing for the subject as of that date").with("subjectRef", subjectRef).with("asOf", asOf.toString()));
     }
 
     @GetMapping("/quotas/{quotaRef}/revisions")

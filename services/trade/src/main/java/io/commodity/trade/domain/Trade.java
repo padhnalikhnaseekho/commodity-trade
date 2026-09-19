@@ -53,10 +53,19 @@ public class Trade {
     @Column(name = "created_brd", nullable = false)
     private LocalDate createdBrd;
 
+    // Optional explicit FunctionalLine (valuation routing override). Null = follow the cutover rule in reference data.
+    @Column(name = "functional_line")
+    private String functionalLine;
+
     protected Trade() {} // JPA
 
     public Trade(String tradeRef, BusinessLine businessLine, String deskId, Side side, String counterparty,
                  String commodity, BigDecimal totalQty, String uom, LocalDate createdBrd) {
+        this(tradeRef, businessLine, deskId, side, counterparty, commodity, totalQty, uom, createdBrd, null);
+    }
+
+    public Trade(String tradeRef, BusinessLine businessLine, String deskId, Side side, String counterparty,
+                 String commodity, BigDecimal totalQty, String uom, LocalDate createdBrd, String functionalLine) {
         this.tradeRef = tradeRef;
         this.businessLine = businessLine;
         this.deskId = deskId;
@@ -66,6 +75,7 @@ public class Trade {
         this.totalQty = totalQty;
         this.uom = uom;
         this.createdBrd = createdBrd;
+        this.functionalLine = functionalLine;
     }
 
     public Long getId() { return id; }
@@ -78,4 +88,5 @@ public class Trade {
     public BigDecimal getTotalQty() { return totalQty; }
     public String getUom() { return uom; }
     public LocalDate getCreatedBrd() { return createdBrd; }
+    public String getFunctionalLine() { return functionalLine; }
 }

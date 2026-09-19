@@ -5,6 +5,8 @@ import io.commodity.contracts.lookup.QuotaDirectory;
 import io.commodity.contracts.lookup.QuotaView;
 import io.commodity.contracts.refs.AssignmentRef;
 import io.commodity.contracts.refs.QuotaRef;
+import io.commodity.contracts.valuation.SubjectLevel;
+import io.commodity.contracts.valuation.ValuationInputs;
 import io.commodity.platform.error.DomainException;
 import io.commodity.pricing.domain.*;
 import io.commodity.pricing.repository.RevisionStore;
@@ -100,6 +102,25 @@ public class PricingService {
     @Transactional(readOnly = true)
     public List<QuotaRevisionRow> revisions(String quotaRef) {
         return store.revisions(quotaRef);
+    }
+
+    /**
+     * Assembles a valuation's inputs from the revision in force as of a BRD: the immutable ids the request key is built from,
+     * plus quantities, components, parameters and approval. Empty when pricing has nothing for the subject at that date.
+     * For ASSIGNMENT level the subject is an assignment ref, for QUOTA level a quota ref (all its assignments).
+     */
+    @Transactional(readOnly = true)
+    public Optional<ValuationInputs> valuationInputs(String subjectRef, SubjectLevel level, LocalDate asOf) {
+        String quotaRef = level == SubjectLevel.QUOTA ? subjectRef : quotaOf(subjectRef);
+        QuotaView quota = quotaDirectory.find(quotaRef).orElseThrow(() -> notFound("quota", quotaRef));
+        return store.asOf(quotaRef, asOf).flatMap(row -> {
+            var assignments = store.loadInputs(row.pqrId(), asOf);
+            if (level == SubjectLevel.ASSIGNMENT) {
+                assignments = assignments.stream().filter(a -> a.assignmentRef().equals(subjectRef)).toList();
+                if (assignments.isEmpty()) return Optional.empty();
+            }
+            return Optional.of(new ValuationInputs(subjectRef, level, asOf, row.pqrId(), row.qagrId(), quota.businessLine(), assignments));
+        });
     }
 
     /** Whether pricing holds any price component for the assignment (backs the FixationDirectory port used by logistics). */

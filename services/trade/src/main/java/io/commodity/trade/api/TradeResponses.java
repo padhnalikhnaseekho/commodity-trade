@@ -10,7 +10,7 @@ public final class TradeResponses {
     public record Created(String tradeRef, List<String> quotas) {}
 
     public record TradeView(String tradeRef, String businessLine, String deskId, String side, String counterparty,
-                            String commodity, String totalQty, String uom, LocalDate createdBrd) {}
+                            String commodity, String totalQty, String uom, LocalDate createdBrd, String functionalLine) {}
 
     public record QuotaItem(String quotaRef, int seq, String periodicity, LocalDate from, LocalDate to, String qty) {}
 }

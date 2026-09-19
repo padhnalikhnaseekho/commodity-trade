@@ -63,4 +63,23 @@ class HttpQuotaDirectoryTest {
         assertThat(fixation.hasFixation("1.1.2")).isFalse();
         assertThatThrownBy(() -> fixation.hasFixation("1.1.3")).isInstanceOf(RestClientException.class);
     }
+
+    // PROVES the inputs adapter maps the pricing answer, treats 404 as "nothing", and does not hide an outage.
+    @Test
+    void valuationInputsAdapterMapsAnswersAndDoesNotHideOutages() {
+        var provider = new HttpValuationInputsProvider(builder.baseUrl("http://pricing.invalid").build());
+        server.expect(requestTo("http://pricing.invalid/api/valuation-inputs?subjectRef=1.1.1&subjectLevel=ASSIGNMENT&asOf=2026-09-18")).andRespond(withSuccess(
+                "{\"subjectRef\":\"1.1.1\",\"level\":\"ASSIGNMENT\",\"brd\":\"2026-09-18\",\"pqrId\":\"00000000-0000-0000-0000-000000000001\","
+                        + "\"qagrId\":null,\"businessLine\":\"RM\",\"assignments\":[{\"assignmentRef\":\"1.1.1\",\"parId\":\"00000000-0000-0000-0000-000000000002\","
+                        + "\"qty\":\"100.0000\",\"approved\":true,\"components\":[],\"parameters\":[]}]}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://pricing.invalid/api/valuation-inputs?subjectRef=1.1.2&subjectLevel=ASSIGNMENT&asOf=2026-09-18")).andRespond(withStatus(HttpStatus.NOT_FOUND));
+        server.expect(requestTo("http://pricing.invalid/api/valuation-inputs?subjectRef=1.1.3&subjectLevel=ASSIGNMENT&asOf=2026-09-18")).andRespond(withServerError());
+
+        var got = provider.assemble("1.1.1", io.commodity.contracts.valuation.SubjectLevel.ASSIGNMENT, java.time.LocalDate.of(2026, 9, 18)).orElseThrow();
+        assertThat(got.assignments().get(0).approved()).isTrue();
+        assertThat(got.assignments().get(0).qty()).isEqualByComparingTo("100");
+        assertThat(provider.assemble("1.1.2", io.commodity.contracts.valuation.SubjectLevel.ASSIGNMENT, java.time.LocalDate.of(2026, 9, 18))).isEmpty();
+        assertThatThrownBy(() -> provider.assemble("1.1.3", io.commodity.contracts.valuation.SubjectLevel.ASSIGNMENT, java.time.LocalDate.of(2026, 9, 18)))
+                .isInstanceOf(RestClientException.class);
+    }
 }

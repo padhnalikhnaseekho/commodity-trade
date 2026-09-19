@@ -3,6 +3,7 @@ package io.commodity.pricing.config;
 import io.commodity.contracts.lookup.QuotaDirectory;
 import io.commodity.platform.error.ProblemAdvice;
 import io.commodity.platform.eventing.DedupStore;
+import io.commodity.platform.eventing.DlqErrorHandler;
 import io.commodity.platform.eventing.PeriodicTask;
 import io.commodity.platform.lookup.HttpQuotaDirectory;
 import io.commodity.pricing.repository.RevisionStore;
@@ -10,7 +11,6 @@ import io.commodity.pricing.service.CopyAllRevisionWriter;
 import io.commodity.pricing.service.RevisionWriter;
 import io.commodity.pricing.service.StructuralSharingRevisionWriter;
 import java.time.Duration;
-import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -18,9 +18,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
-import org.springframework.util.backoff.FixedBackOff;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -71,8 +69,7 @@ class PricingConfig {
     @Bean
     @ConditionalOnProperty("commodity.pricing.consumer.enabled")
     DefaultErrorHandler pricingErrorHandler(KafkaTemplate<?, ?> kafka, @Value("${commodity.pricing.consumer.retry-interval-ms:1000}") long intervalMs) {
-        var recoverer = new DeadLetterPublishingRecoverer(kafka, (record, ex) -> new TopicPartition(record.topic() + ".dlq", -1));
-        return new DefaultErrorHandler(recoverer, new FixedBackOff(intervalMs, 3));
+        return DlqErrorHandler.create(kafka, intervalMs, 3);
     }
 
     /** Trims dedup markers older than the TTL. The TTL must comfortably exceed the broker's retention-plus-retry window. */

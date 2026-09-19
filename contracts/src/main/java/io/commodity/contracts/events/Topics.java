@@ -14,4 +14,9 @@ public final class Topics {
     public static final String QAG_REVISION = "logistics.qag.revision.v1";
     /** Operational logistics events (load, discharge, ...). High volume, no QAG revision. Key: assignmentRef. */
     public static final String SHIPPING_OPERATIONAL = "logistics.shipping.operational.v1";
+
+    /** A valuation request from the gateway to the engine adapter. Key: requestId. */
+    public static final String VALUATION_REQUEST = "valuation.request.v1";
+    /** The engine adapter's reply to the gateway. One shared reply topic, not one per gateway instance. Key: requestId. */
+    public static final String VALUATION_REPLY = "valuation.reply.v1";
 }

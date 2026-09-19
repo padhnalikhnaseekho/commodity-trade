@@ -1,6 +1,9 @@
 package io.commodity.pricing.repository;
 
 import io.commodity.contracts.refs.AssignmentRef;
+import io.commodity.contracts.valuation.ValuationInputs.AssignmentInputs;
+import io.commodity.contracts.valuation.ValuationInputs.ComponentInput;
+import io.commodity.contracts.valuation.ValuationInputs.ParameterInput;
 import io.commodity.pricing.domain.*;
 import java.math.BigDecimal;
 import java.sql.Array;
@@ -102,6 +105,37 @@ public class RevisionStore {
                 .map(e -> new AssignmentContent(e.getValue()[0], new BigDecimal(e.getValue()[1]), params.get(e.getKey()), comps.get(e.getKey())))
                 .sorted(Comparator.comparing(a -> AssignmentRef.parse(a.assignmentRef())))
                 .toList();
+    }
+
+    /**
+     * Like {@link #loadAssignments} but keeps the ROW IDS (assignment revision, parameter revision, price component) and the
+     * approval state as of a BRD: exactly what a valuation request is keyed on. Same three joins.
+     */
+    public List<AssignmentInputs> loadInputs(UUID pqrId, LocalDate approvalAsOf) {
+        Map<UUID, Object[]> heads = new LinkedHashMap<>(); // parId -> {ref, qty}
+        jdbc.query("SELECT ar.par_id, ar.assignment_ref, ar.qty FROM pricing.quota_revision_member m"
+                        + " JOIN pricing.assignment_revision ar ON ar.par_id = m.par_id WHERE m.pqr_id = ?",
+                rs -> { heads.put(rs.getObject(1, UUID.class), new Object[] {rs.getString(2), rs.getBigDecimal(3)}); }, pqrId);
+
+        Map<UUID, List<ParameterInput>> params = new HashMap<>();
+        jdbc.query("SELECT p.par_id, p.ppr_id, p.element, p.value FROM pricing.quota_revision_member m"
+                        + " JOIN pricing.parameter_revision p ON p.par_id = m.par_id WHERE m.pqr_id = ? ORDER BY p.ppr_id",
+                rs -> { params.computeIfAbsent(rs.getObject(1, UUID.class), k -> new ArrayList<>())
+                        .add(new ParameterInput(rs.getObject(2, UUID.class), rs.getString(3), rs.getBigDecimal(4))); }, pqrId);
+
+        Map<UUID, List<ComponentInput>> comps = new HashMap<>();
+        jdbc.query("SELECT c.par_id, c.pc_id, c.kind, c.qty, c.fixed_price, c.index_name, c.period_from, c.period_to, c.formula, c.provisional"
+                        + " FROM pricing.quota_revision_member m JOIN pricing.price_component c ON c.par_id = m.par_id WHERE m.pqr_id = ? ORDER BY c.pc_id",
+                rs -> { comps.computeIfAbsent(rs.getObject(1, UUID.class), k -> new ArrayList<>())
+                        .add(new ComponentInput(rs.getObject(2, UUID.class), rs.getString(3), rs.getBigDecimal(4), rs.getBigDecimal(5), rs.getString(6),
+                                rs.getObject(7, LocalDate.class), rs.getObject(8, LocalDate.class), rs.getString(9), rs.getBoolean(10))); }, pqrId);
+
+        return heads.entrySet().stream().map(e -> {
+            String ref = (String) e.getValue()[0];
+            boolean approved = approvalAsOf(ref, approvalAsOf) == ApprovalStatus.APPROVED;
+            return new AssignmentInputs(ref, e.getKey(), (BigDecimal) e.getValue()[1], approved,
+                    comps.getOrDefault(e.getKey(), List.of()), params.getOrDefault(e.getKey(), List.of()));
+        }).sorted(Comparator.comparing(a -> AssignmentRef.parse(a.assignmentRef()))).toList();
     }
 
     /** parId of every assignment revision a quota revision points at, keyed by assignment ref. */

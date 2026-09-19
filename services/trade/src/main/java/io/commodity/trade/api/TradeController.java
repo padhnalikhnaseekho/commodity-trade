@@ -31,7 +31,7 @@ public class TradeController {
     public TradeResponses.TradeView get(@PathVariable String tradeRef) {
         var t = service.getTrade(tradeRef);
         return new TradeResponses.TradeView(t.getTradeRef(), t.getBusinessLine().name(), t.getDeskId(), t.getSide().name(),
-                t.getCounterparty(), t.getCommodity(), t.getTotalQty().toPlainString(), t.getUom(), t.getCreatedBrd());
+                t.getCounterparty(), t.getCommodity(), t.getTotalQty().toPlainString(), t.getUom(), t.getCreatedBrd(), t.getFunctionalLine());
     }
 
     @GetMapping("/trades/{tradeRef}/quotas")
