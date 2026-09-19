@@ -9,6 +9,7 @@ val testcontainersVersion = "1.21.4"
 dependencies {
     "implementation"(platform("org.springframework.boot:spring-boot-dependencies:$bootVersion"))
     "implementation"("org.springframework.boot:spring-boot-starter-data-jpa")
+    "implementation"("org.springframework.boot:spring-boot-starter-web")
     "implementation"("org.flywaydb:flyway-core")
     "implementation"("org.flywaydb:flyway-database-postgresql")
     "runtimeOnly"("org.postgresql:postgresql")

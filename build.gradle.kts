@@ -15,6 +15,9 @@ allprojects {
 subprojects {
     apply(plugin = "java")
     java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+    // Spring MVC binds @PathVariable/@RequestParam by parameter name. The Spring Boot Gradle plugin adds this flag;
+    // we do not use that plugin, so we add it ourselves.
+    tasks.withType<JavaCompile> { options.compilerArgs.add("-parameters") }
     tasks.withType<Test> {
         useJUnitPlatform()
         // WHY UTC: the JDBC driver sends the JVM timezone to Postgres. A developer machine using a legacy

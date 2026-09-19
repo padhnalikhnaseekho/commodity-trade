@@ -10,6 +10,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface QagRevisionRepository extends JpaRepository<QagRevision, Long> {
     Optional<QagRevision> findByQagrId(UUID qagrId);
 
+    /** The head of the quota's revision chain (the most recently cut revision). */
+    Optional<QagRevision> findFirstByQuotaRefOrderByIdDesc(String quotaRef);
+
     // "Latest revision for a quota as of a BRD" - the same rule pricing uses (spec: BRD as-of resolution).
     List<QagRevision> findByQuotaRefAndBrdLessThanEqualOrderByBrdDescCreatedAtDesc(String quotaRef, java.time.LocalDate asOf);
 }

@@ -9,6 +9,8 @@ awaiting confirmation. Nothing here changes the spec's own rules.
 | `assignment.status` | `ACTIVE`, `SUPERSEDED` (set on the parent after a split), `CANCELLED`, `DELETED` |
 | Assignment approval | `APPROVED` / `UNAPPROVED`. Owned by **pricing** (not logistics): an assignment must be approved to be eligible for valuation and P&L |
 | Approval and QAG | Approval changes do NOT cut a QAG revision |
+| Change kind on add/modify | Caller supplies a required material `changeKind` on POST and PATCH; a non-material or missing kind is rejected |
+| QAG membership | A revision's `members` lists ACTIVE assignments only; moving one to SUPERSEDED, CANCELLED or DELETED appears as `assignmentsRemoved` |
 | Quota quantity cap | Only `ACTIVE` assignments count toward `sum(assignment.qty) <= quota.qty` |
 | Delivery periodicity | All four are required in scope: `MONTHLY`, `WEEKLY`, `DAILY`, `CUSTOM` |
 
@@ -26,3 +28,12 @@ quantity is split evenly across periods, scale 4, with the remainder going to th
 Open, to settle in P0.3 (pricing): how approval is stored. Revisions are insert-only, so it is either an attribute
 carried by the assignment revision (an approval then cuts a pricing revision) or a separate insert-only approval
 record. Not modelled yet; ask before building it.
+
+## P0.2 assumptions (mine; confirm or correct)
+- Only ACTIVE assignments can be modified. SUPERSEDED, CANCELLED and DELETED are terminal (no reactivation).
+- A PATCH that changes nothing cuts no revision and returns the latest `qagrId` unchanged.
+- "Modified" in a diff means the quantity changed; quantity and status are the only assignment fields modelled so far.
+- Assignment refs are never reused: a new assignment takes max(seq)+1 over ALL assignments in the quota, whatever their status.
+- Trade numbers come from a database sequence (`trade.trade_number_seq`); gaps are possible and harmless.
+- Monthly quotas follow calendar months clipped to `[from, to]`; e.g. from 15 Jan gives a first quota of 15-31 Jan.
+- Logistics learns a quota's quantity and desk through a lookup port (`QuotaDirectory`), never by reading trade tables.

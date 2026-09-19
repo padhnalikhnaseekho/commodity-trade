@@ -47,6 +47,12 @@ public class Assignment {
         this.status = status;
     }
 
+    /** Changes the quantity in place. History is not lost: every material change also cuts a QAG revision. */
+    public void changeQty(BigDecimal newQty) { this.qty = newQty; }
+
+    /** Moves the assignment to a new lifecycle status (transition rules are enforced by the service). */
+    public void changeStatus(AssignmentStatus newStatus) { this.status = newStatus; }
+
     public Long getId() { return id; }
     public String getAssignmentRef() { return assignmentRef; }
     public String getQuotaRef() { return quotaRef; }
