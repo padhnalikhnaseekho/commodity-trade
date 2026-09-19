@@ -57,10 +57,10 @@ class GatewayFlowTest {
 
     @Container
     @ServiceConnection
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16").withStartupAttempts(5);
 
     @Container
-    static RedpandaContainer redpanda = new RedpandaContainer("docker.redpanda.com/redpandadata/redpanda:v23.3.10");
+    static RedpandaContainer redpanda = new RedpandaContainer("docker.redpanda.com/redpandadata/redpanda:v23.3.10").withStartupAttempts(5);
 
     @DynamicPropertySource
     static void kafka(DynamicPropertyRegistry registry) {
@@ -116,6 +116,22 @@ class GatewayFlowTest {
                 .andExpect(jsonPath("$.result.value").value("25000.0000")).andExpect(jsonPath("$.requestKey").value(key));
 
         assertThat(engine.callsFor(key)).isEqualTo(1);
+    }
+
+    // PROVES the result fan-out: a completed valuation leaves ONE result event in the outbox (same transaction as the COMPLETED transition),
+    // keyed by subject, carrying the value; a duplicate reply does not publish a second one.
+    @Test
+    void aCompletedValuationPublishesItsResultOnce() throws Exception {
+        String ref = subject("33", true, null);
+        String id = JsonPath.read(submit(ref, "2026-09-18", "INTERACTIVE"), "$.requestId");
+        awaitStatus(id, "COMPLETED");
+        engine.publishReply(id, "{\"requestId\":\"" + id + "\",\"requestKey\":\"x\",\"engine\":\"MODERN\",\"success\":true,\"result\":\"1.0000\",\"error\":null}"); // duplicate
+        String other = JsonPath.read(submit(subject("34", true, null), "2026-09-18", "INTERACTIVE"), "$.requestId");
+        awaitStatus(other, "COMPLETED"); // the duplicate has certainly been consumed by now
+
+        var rows = jdbc.queryForList("SELECT msg_key, payload FROM gateway.outbox WHERE topic = 'valuation.published.v1' AND msg_key = ?", ref);
+        assertThat(rows).hasSize(1);
+        assertThat((String) rows.get(0).get("payload")).contains("\"value\":\"3300.0000\"").contains("\"level\":\"ASSIGNMENT\"").contains("\"brd\":\"2026-09-18\"");
     }
 
     // PROVES the engine receives a COMPLETE request: quantity, components and parameters are inside it (no lookups needed), and the

@@ -13,6 +13,8 @@ dependencies {
     api("org.springframework:spring-web")
     api("org.springframework.kafka:spring-kafka")
     api("org.slf4j:slf4j-api")
+    api("org.flywaydb:flyway-core")
+    api("org.flywaydb:flyway-database-postgresql")
     api("com.fasterxml.jackson.core:jackson-databind")
     api("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 

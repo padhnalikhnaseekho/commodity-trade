@@ -28,7 +28,7 @@ class LogisticsRepositoryTest {
 
     @Container
     @ServiceConnection
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16").withStartupAttempts(5);
 
     @Autowired AssignmentRepository assignments;
     @Autowired QagRevisionRepository revisions;
@@ -103,8 +103,21 @@ class LogisticsRepositoryTest {
         revisions.save(new QagRevision(UUID.randomUUID(), "5.1", null, LocalDate.of(2026, 9, 1), new String[] {"ALLOCATION"}));
         revisions.saveAndFlush(new QagRevision(UUID.randomUUID(), "5.1", null, LocalDate.of(2026, 9, 3), new String[] {"SPLIT"}));
 
-        var asOfSep2 = revisions.findByQuotaRefAndBrdLessThanEqualOrderByBrdDescCreatedAtDesc("5.1", LocalDate.of(2026, 9, 2));
+        var asOfSep2 = revisions.findByQuotaRefAndBrdLessThanEqualOrderByBrdDescIdDesc("5.1", LocalDate.of(2026, 9, 2));
         assertThat(asOfSep2).hasSize(1);
         assertThat(asOfSep2.get(0).getBrd()).isEqualTo(LocalDate.of(2026, 9, 1));
+    }
+
+    // PROVES the QAG revision in force is decided by the insertion sequence, not wall-clock time: a later revision stamped an hour EARLIER must still win.
+    @Test
+    void latestRevisionFollowsTheInsertionSequenceEvenWhenTheClockWentBackwards() {
+        UUID first = UUID.randomUUID(), later = UUID.randomUUID();
+        revisions.saveAndFlush(new QagRevision(first, "6.1", null, LocalDate.of(2026, 9, 5), new String[] {"ALLOCATION"}));
+        jdbc.update("INSERT INTO logistics.qag_revision (qagr_id, quota_ref, previous_id, brd, change_kinds, created_at) VALUES (?, '6.1', ?, ?, ARRAY['SPLIT'], now() - interval '1 hour')",
+                later, first, java.sql.Date.valueOf(LocalDate.of(2026, 9, 5)));
+
+        var asOf = revisions.findByQuotaRefAndBrdLessThanEqualOrderByBrdDescIdDesc("6.1", LocalDate.of(2026, 9, 5));
+        assertThat(asOf.get(0).getQagrId()).isEqualTo(later);
+        assertThat(revisions.findFirstByQuotaRefOrderByIdDesc("6.1").orElseThrow().getQagrId()).isEqualTo(later);
     }
 }

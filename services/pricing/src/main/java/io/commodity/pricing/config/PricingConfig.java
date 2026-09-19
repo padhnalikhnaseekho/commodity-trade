@@ -5,22 +5,30 @@ import io.commodity.contracts.valuation.ValuationSubmitter;
 import io.commodity.platform.error.ProblemAdvice;
 import io.commodity.platform.eventing.DedupStore;
 import io.commodity.platform.eventing.DlqErrorHandler;
+import io.commodity.platform.eventing.KafkaMessageSink;
 import io.commodity.platform.eventing.PeriodicTask;
 import io.commodity.platform.lookup.HttpQuotaDirectory;
 import io.commodity.platform.lookup.HttpValuationSubmitter;
+import io.commodity.platform.outbox.OutboxPoller;
+import io.commodity.platform.outbox.OutboxPublisher;
+import io.commodity.platform.outbox.OutboxWriter;
 import io.commodity.pricing.repository.RevisionStore;
 import io.commodity.pricing.service.CopyAllRevisionWriter;
 import io.commodity.pricing.service.RevisionWriter;
 import io.commodity.pricing.service.StructuralSharingRevisionWriter;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -52,12 +60,30 @@ class PricingConfig {
     }
 
     @Bean
+    OutboxWriter pricingOutboxWriter(JdbcTemplate jdbc) {
+        return new OutboxWriter(jdbc, "pricing");
+    }
+
+    /** Ships the pricing snapshots to Kafka. Opt-in (needs a broker), like the other services' publishers. */
+    @Bean
+    @ConditionalOnProperty("commodity.outbox.enabled")
+    OutboxPoller pricingOutboxPoller(JdbcTemplate jdbc, PlatformTransactionManager txManager, KafkaTemplate<String, String> kafka,
+                                     @Value("${commodity.outbox.poll-ms:100}") long pollMs, @Value("${commodity.outbox.batch-size:100}") int batchSize) {
+        return new OutboxPoller(new OutboxPublisher(jdbc, new TransactionTemplate(txManager), "pricing", new KafkaMessageSink(kafka), batchSize), pollMs);
+    }
+
+    @Bean
     DedupStore pricingDedupStore(JdbcTemplate jdbc) {
         return new DedupStore(jdbc, "pricing");
     }
 
     /** Quotas come from the trade service over HTTP. Active only when its base URL is configured. */
+    /**
+     * The quota lookup adapter is identical in every service that needs it, so when several services share one JVM the first definition wins
+     * (ConditionalOnMissingBean) instead of registering the same bean three times.
+     */
     @Bean
+    @ConditionalOnMissingBean(QuotaDirectory.class)
     @ConditionalOnProperty("commodity.trade.base-url")
     QuotaDirectory quotaDirectory(RestClient.Builder builder, @Value("${commodity.trade.base-url}") String baseUrl) {
         return new HttpQuotaDirectory(builder, baseUrl);
@@ -76,8 +102,10 @@ class PricingConfig {
      * TARGET: non-blocking retries on delay topics (5s, 30s, 5m) so even the retries do not hold the partition.
      */
     @Bean
+    @ConditionalOnMissingBean(CommonErrorHandler.class) // Boot applies a CommonErrorHandler only if there is exactly one, so services sharing a JVM share it
     @ConditionalOnProperty("commodity.pricing.consumer.enabled")
-    DefaultErrorHandler pricingErrorHandler(KafkaTemplate<?, ?> kafka, @Value("${commodity.pricing.consumer.retry-interval-ms:1000}") long intervalMs) {
+    DefaultErrorHandler pricingErrorHandler(KafkaTemplate<?, ?> kafka,
+                                            @Value("${commodity.consumer.retry-interval-ms:${commodity.pricing.consumer.retry-interval-ms:1000}}") long intervalMs) {
         return DlqErrorHandler.create(kafka, intervalMs, 3);
     }
 

@@ -10,6 +10,7 @@ import io.commodity.platform.outbox.OutboxPoller;
 import io.commodity.platform.outbox.OutboxPublisher;
 import io.commodity.platform.outbox.OutboxWriter;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -38,7 +39,12 @@ class LogisticsConfig {
     }
 
     /** Quotas come from the trade service over HTTP. Active only when its base URL is configured. */
+    /**
+     * The quota lookup adapter is identical in every service that needs it, so when several services share one JVM the first definition wins
+     * (ConditionalOnMissingBean) instead of registering the same bean three times.
+     */
     @Bean
+    @ConditionalOnMissingBean(QuotaDirectory.class)
     @ConditionalOnProperty("commodity.trade.base-url")
     QuotaDirectory quotaDirectory(RestClient.Builder builder, @Value("${commodity.trade.base-url}") String baseUrl) {
         return new HttpQuotaDirectory(builder, baseUrl);

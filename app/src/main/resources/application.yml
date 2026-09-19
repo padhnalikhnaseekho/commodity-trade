@@ -1,0 +1,44 @@
+# Defaults for the local demo: everything in one JVM, against the docker-compose Postgres and Redpanda.
+# Override any of these on the command line, e.g. to run ONE service:
+#   ./gradlew :app:bootRun --args='--spring.profiles.active=pricing,stubs --server.port=8082 --commodity.trade.base-url=http://otherhost:8080'
+spring:
+  profiles:
+    active: trade,logistics,pricing,gateway,blotter,stubs
+  datasource:
+    url: jdbc:postgresql://localhost:5432/commodity
+    username: commodity
+    password: commodity
+  flyway:
+    enabled: false          # each service migrates its own schema through SchemaMigration (see the module classes)
+  jpa:
+    hibernate:
+      ddl-auto: validate    # Flyway owns the schema; Hibernate only checks the entities match
+    open-in-view: false
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      auto-offset-reset: earliest
+
+server:
+  port: 8080
+
+commodity:
+  # Services talk to each other over HTTP even inside one JVM: here every service is at this same address.
+  trade:
+    base-url: http://localhost:8080
+  pricing:
+    base-url: http://localhost:8080
+    consumer:
+      enabled: true
+  gateway:
+    base-url: http://localhost:8080
+    workers:
+      enabled: true
+  blotter:
+    consumer:
+      enabled: true
+  outbox:
+    enabled: true
+    poll-ms: 100
+  engine:
+    enabled: true           # the stub engine adapter (inside the `stubs` profile)

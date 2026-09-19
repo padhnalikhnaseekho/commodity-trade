@@ -21,3 +21,8 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
     runtimeOnly("ch.qos.logback:logback-classic")
 }
+
+tasks.named<JavaExec>("run") {
+    // see the root build: the cleanup helper container can fail to bind a host port on a busy, narrow ephemeral range
+    environment("TESTCONTAINERS_RYUK_DISABLED", "true")
+}

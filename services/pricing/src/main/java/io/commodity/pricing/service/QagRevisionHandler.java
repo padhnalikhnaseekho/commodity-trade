@@ -38,15 +38,17 @@ public class QagRevisionHandler {
     private final RevisionStore store;
     private final RevisionWriter writer;
     private final JdbcTemplate jdbc;
+    private final PricingPublisher publisher;
 
     public QagRevisionHandler(DedupStore dedup, QuotaDirectory quotaDirectory, BusinessDayClock clock, RevisionStore store,
-                              RevisionWriter writer, JdbcTemplate jdbc) {
+                              RevisionWriter writer, JdbcTemplate jdbc, PricingPublisher publisher) {
         this.dedup = dedup;
         this.quotaDirectory = quotaDirectory;
         this.clock = clock;
         this.store = store;
         this.writer = writer;
         this.jdbc = jdbc;
+        this.publisher = publisher;
     }
 
     @Transactional
@@ -60,7 +62,9 @@ public class QagRevisionHandler {
         BrdGuard.requireOpen(quotaRef, event.brd(), clock.currentBrd(quota.deskId()));
 
         List<AssignmentContent> current = store.head(quotaRef).map(h -> store.loadAssignments(h.pqrId())).orElse(List.of());
-        writer.write(QuotaRef.parse(quotaRef), event.qagrId(), event.brd(), EventApplier.apply(current, event));
+        List<AssignmentContent> next = EventApplier.apply(current, event);
+        var written = writer.write(QuotaRef.parse(quotaRef), event.qagrId(), event.brd(), next);
+        publisher.publish(quotaRef, written.pqrId(), event.brd(), "REVISION", next);
         return Result.APPLIED;
     }
 }

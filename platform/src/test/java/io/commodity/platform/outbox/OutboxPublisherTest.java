@@ -32,8 +32,8 @@ import org.testcontainers.redpanda.RedpandaContainer;
 @Testcontainers
 class OutboxPublisherTest {
 
-    @Container static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-    @Container static RedpandaContainer redpanda = new RedpandaContainer("docker.redpanda.com/redpandadata/redpanda:v23.3.10");
+    @Container static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16").withStartupAttempts(5);
+    @Container static RedpandaContainer redpanda = new RedpandaContainer("docker.redpanda.com/redpandadata/redpanda:v23.3.10").withStartupAttempts(5);
 
     JdbcTemplate jdbc;
     TransactionTemplate tx;

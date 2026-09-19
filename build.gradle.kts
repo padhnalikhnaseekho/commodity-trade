@@ -24,6 +24,10 @@ subprojects {
         // alias (e.g. Asia/Calcutta) makes the connection fail, and wall-clock zones make tests
         // non-deterministic. Business dates (BRD) are LocalDate, so UTC loses nothing.
         jvmArgs("-Duser.timezone=UTC")
+        // Testcontainers' cleanup helper (Ryuk) is one more container that needs a random host port. On a machine whose ephemeral port range is narrow and busy
+        // (WSL2 mirrored networking here) that bind can collide, and unlike our own containers it cannot be retried. It only removes containers left behind by a
+        // test JVM that was killed hard; our tests stop their containers normally, so it is switched off. If a run is killed, `docker ps` shows any leftovers.
+        environment("TESTCONTAINERS_RYUK_DISABLED", "true")
     }
     dependencies {
         // Plain JUnit 5 for domain tests: no Spring, no database (project conventions rule 4).

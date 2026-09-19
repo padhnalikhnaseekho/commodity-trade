@@ -45,7 +45,7 @@ class AssignmentApiTest {
 
     @Container
     @ServiceConnection
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16").withStartupAttempts(5);
 
     static final Map<String, QuotaView> QUOTAS = new ConcurrentHashMap<>();
     static final Set<String> FIXATED = ConcurrentHashMap.newKeySet();

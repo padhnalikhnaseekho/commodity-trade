@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "outDir": ".test-out",
+    "rootDir": ".",
+    "strict": true,
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/app/patch.ts", "test/**/*.ts"]
+}

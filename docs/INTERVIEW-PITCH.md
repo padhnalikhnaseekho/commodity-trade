@@ -1,6 +1,6 @@
 # Interview pitch: what this demo proves, and how to say it
 
-Built so far: P0.1 to P0.4 (trade, logistics, pricing with structural sharing, valuation gateway). The blotter and demo harness (P0.5) are next.
+Built: P0.1 to P0.5 (trade, logistics, pricing with structural sharing, valuation gateway, blotter with live push and an as-of picker, seed generator, end-to-end test).
 Every number below is reproducible from the repo. Say "built" for what is built and "designed" for the rest.
 
 ## 1. The 30-second opener
@@ -99,6 +99,34 @@ property test proves readers cannot tell the difference."
   changed it: the flag is derived from the current approval state and never stored as if it were current."
 - **Proof:** `GatewayFlowTest.anUnapprovedAssignmentIsValuedAsProvisionalAndBecomesFinalOnceApproved`.
 
+### M4. A whole-system test found a bug no unit test could (P0.5)
+- **Improvement:** the end-to-end test runs the real seed against every service on real Postgres and a real broker, and checks the result through the public APIs. It failed
+  intermittently: an assignment "lost" a parameter or price component, and sometimes pricing "never caught up". I did not retry it away. I added exact per-assignment
+  expectations and a database snapshot on failure, and the snapshot showed two answers to "which revision is current": the write path said id 413, the as-of read said id 406.
+  Rows inserted later carried EARLIER `created_at` values, so wall-clock time had gone backwards.
+- **Say:** "The spec tie-breaks the revision in force by `created_at`. Wall clocks are not monotonic: NTP and hypervisor time sync step them, and separate servers disagree by
+  design, so a later write can look older and the read returns a stale revision, which looks exactly like a lost update. I changed every ordering to the insertion sequence,
+  which is safe because all writers of a quota hold its advisory lock, so id order is the logical order. Never order by a timestamp when you can order by a sequence."
+- **Proof:** `RevisionWritersTest.aLaterRevisionWithAnEarlierTimestampStillWins` (and the approval and logistics equivalents), migrations pricing V4 and logistics V4,
+  `AppEndToEndTest` passing repeatedly afterwards.
+- **Also worth saying:** the first theory (a race between writers) was wrong. Tracing showed no head revision was ever read twice and lock waits never exceeded 4 ms, so
+  concurrency was ruled out with evidence before the real cause was found.
+
+### M5. One deployable, selectable services (P0.5)
+- **Improvement:** each service sits behind its own Spring profile; the app module activates profiles and scans nothing else. A test starts each subset and asserts a service
+  outside the profile list loads no beans, no endpoints and no schema.
+- **Say:** "It runs as one process for the demo, or as any subset of services by changing the active profile and the base URLs. I would call it a modular monolith that can
+  be deployed as services, and I can name what the single JVM hides: no real network failure between services, one shared database server, and in-process stubs behind
+  ports for the business-day clock and reference data."
+- **Proof:** `ProfileIsolationTest`, the boundary check in the root build, `PricingModule` and its siblings.
+
+### M6. A live read model with a safe delta protocol (P0.5)
+- **Improvement:** the blotter is a disposable projection built from pricing snapshots and valuation results. Live updates are JSON Patch deltas, coalesced per row every
+  250 ms, over Server-Sent Events with a replay buffer and `Last-Event-ID`; the as-of picker re-resolves every row at a past business date.
+- **Say:** "A row that changed nine times in a second is pushed once, and I proved the merged patch equals applying all nine in order. A client that reconnects resumes from
+  where it left off, or is told to reset. The number reaches the open screen in well under a second, measured through the whole chain."
+- **Proof:** `RowPatchTest`, `RowBroadcasterTest`, `BlotterStreamTest`, and `AppEndToEndTest` (push under a second, as-of at a past date).
+
 ### M. Honest engineering habits (say these if asked how you work)
 - Tests found real defects in my own work: an empty sum reporting `0` instead of `0.0000`, a wrong-way rename in the equivalence check, a missing
   compiler flag that a blanket "400 for any IllegalArgumentException" handler had hidden as a client error. I removed the blanket handler.
@@ -118,6 +146,11 @@ property test proves readers cannot tell the difference."
 | Lookups have timeouts but no circuit breaker or cache | Demo scope | Resilience4j breaker plus a read-through cache with event invalidation |
 | Dedup TTL bounds the marker table | Bounded storage | TTL must exceed broker retention plus the retry window |
 | Approval and cancel/supersede interactions with fixation are not fully specified | Owner rule covers quantity edits only | Confirm with the business before enforcing more |
+| One JVM hides network failure and shares one database server; the clock and reference data are in-process stubs | Demo scope | Separate processes per profile, real services behind HTTP adapters for those two ports, a database per service |
+| The SSE push lives inside the blotter service | Simplest place for the demo | A separate SSE tier that is its own Kafka consumer group, behind HTTP/2, filtering by each user's subscriptions |
+| An RM quota valuation is repeated on every assignment row | No allocation rule was specified | An agreed pro-rata or a quota header row, decided with the business |
+| Blotter `status` cannot say why an assignment left (cancelled, superseded, deleted) | Revision events carry membership only | Publish the lifecycle status with the revision event |
+| The seeder is deterministic but not idempotent | Simplicity | Detect an existing book, or seed into a named scenario |
 
 ## 4. Likely questions, and the one-line answer
 | Question | Answer | Where |
@@ -141,6 +174,6 @@ property test proves readers cannot tell the difference."
 ## 6. The five-minute demo order (rehearse this)
 1. `./gradlew :benchmark:run`, the ratio table first; point at the 1.0x row unprompted.
 2. Show `quota_revision_member` and `StructuralSharingRevisionWriter`; then the equivalence property and the broken-writer test.
-3. Show as-of resolution (`RevisionWritersTest`: earlier date never sees a later change); the blotter picker follows in P0.5.
+3. Open the blotter, change the as-of date back two business dates, and watch prices and quantities snap to their historical values; then return to Live and fix a price in another window to show the row update without a refresh.
 4. Post a valuation, then the identical one: `cached: true`, engine call count unchanged; then replay the quota (also a cache hit, and no revision written).
 5. Close honestly: what is built, what is designed, and the limits table above.

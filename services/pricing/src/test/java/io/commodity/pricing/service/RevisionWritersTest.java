@@ -148,4 +148,35 @@ class RevisionWritersTest {
         assertThat(second.previousPqrId()).isEqualTo(first.pqrId());
         assertThat(store.revisions(q)).extracting(RevisionStore.QuotaRevisionRow::pqrId).containsExactly(first.pqrId(), second.pqrId());
     }
+
+    // PROVES the fix for a real bug found by the end-to-end test: resolution must follow the INSERTION SEQUENCE, never wall-clock time. Clocks step backwards
+    // (NTP, hypervisor time sync) and servers disagree, so a revision written LATER can carry an EARLIER created_at. Resolving by created_at then returned a
+    // stale revision, which looked exactly like a lost update. Here the later revision is given a timestamp an hour in the past and must still win.
+    @Test
+    void aLaterRevisionWithAnEarlierTimestampStillWins() {
+        String q = freshQuotaRef();
+        var v0 = Fixtures.quota(q, 3, 1, 1);
+        write(sharing, q, D1, v0);
+        var second = write(sharing, q, D1, Fixtures.mutateFirst(v0, 1));
+
+        // a third revision, inserted last, but stamped an hour BEFORE the others (as after a backward clock step)
+        java.util.UUID third = java.util.UUID.randomUUID();
+        JDBC.update("INSERT INTO pricing.quota_revision (pqr_id, quota_ref, qagr_id, previous_id, brd, created_at) VALUES (?, ?, ?, ?, ?, now() - interval '1 hour')",
+                third, q, java.util.UUID.randomUUID(), second.pqrId(), java.sql.Date.valueOf(D1));
+        JDBC.update("INSERT INTO pricing.quota_revision_member (pqr_id, par_id) SELECT ?, par_id FROM pricing.quota_revision_member WHERE pqr_id = ?", third, second.pqrId());
+
+        assertThat(store.head(q).orElseThrow().pqrId()).isEqualTo(third);                    // the write path's head (by id)
+        assertThat(store.asOf(q, D1).orElseThrow().pqrId()).isEqualTo(third);                // and the read path agrees: no stale answer
+        assertThat(store.asOf(q, D1).orElseThrow().createdAt()).isBefore(store.byPqrId(second.pqrId()).orElseThrow().createdAt()); // the trap really was set
+    }
+
+    // PROVES the same for approvals: the latest DECISION wins by insertion order, even when its timestamp is earlier.
+    @Test
+    void theLatestApprovalDecisionWinsEvenWithAnEarlierTimestamp() {
+        String ref = freshQuotaRef() + ".1";
+        store.insertApproval(ref, io.commodity.pricing.domain.ApprovalStatus.APPROVED, D1);
+        JDBC.update("INSERT INTO pricing.assignment_approval (assignment_ref, status, brd, created_at) VALUES (?, 'UNAPPROVED', ?, now() - interval '1 hour')", ref, java.sql.Date.valueOf(D1));
+
+        assertThat(store.approvalAsOf(ref, D1)).isEqualTo(io.commodity.pricing.domain.ApprovalStatus.UNAPPROVED);
+    }
 }

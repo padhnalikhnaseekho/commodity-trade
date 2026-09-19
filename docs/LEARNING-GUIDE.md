@@ -27,4 +27,10 @@ Filled in as each phase lands.
 | Why is replay a cache hit, and is it read-only? | `ReplayService`, `PricingApiTest.replay...`, `ValuationService` (cache before BRD check) |
 | How is the engine migration expressed? | `InMemoryFunctionalLineDirectory` (cutover date + override) |
 | What does the engine adapter depend on? | Nothing but contracts and platform: `services/stubs/build.gradle.kts` |
+| Why must you never order revisions by a timestamp? | `RevisionStore.asOf`, `V4__order_by_sequence.sql`, `RevisionWritersTest.aLaterRevisionWithAnEarlierTimestampStillWins` |
+| How do you run one JVM and still claim independent services? | `PricingModule` (profile), `ProfileIsolationTest`, `CommodityApplication` |
+| How does the blotter stay current without polling? | `BlotterProjector`, `RowBroadcaster`, `BlotterStreamTest`, `AppEndToEndTest.aPricingChangePushes...` |
+| How does the as-of picker work? | `BlotterStore.rows` (latest row per assignment with brd <= date), `AppEndToEndTest.theAsOfControl...` |
+| How is coalescing safe? | `RowPatch.merge`, `RowPatchTest.mergedPatchesAreEquivalentToTheSequence` |
+| How do you prove the whole platform works? | `AppEndToEndTest` (real seed, real broker, real database) |
 | (more added per phase) | |

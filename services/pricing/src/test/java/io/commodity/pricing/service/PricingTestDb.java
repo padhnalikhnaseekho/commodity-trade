@@ -18,7 +18,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
  */
 final class PricingTestDb {
 
-    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16").withStartupAttempts(5);
     private static final AtomicInteger NEXT_TRADE = new AtomicInteger(1000);
     static final JdbcTemplate JDBC;
     static final TransactionTemplate TX;

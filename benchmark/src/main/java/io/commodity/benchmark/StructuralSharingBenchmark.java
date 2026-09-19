@@ -50,7 +50,7 @@ public final class StructuralSharingBenchmark {
     }
 
     public static void main(String[] args) {
-        try (var postgres = new PostgreSQLContainer<>("postgres:16")) {
+        try (var postgres = new PostgreSQLContainer<>("postgres:16").withStartupAttempts(5)) {
             postgres.start();
             var ds = new DriverManagerDataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
             Flyway.configure().dataSource(ds).schemas("pricing").locations("classpath:db/migration/pricing").load().migrate();

@@ -22,7 +22,9 @@ import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
 import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,6 +32,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -84,7 +87,7 @@ class GatewayConfig {
     }
 
     @Bean
-    Dispatcher dispatcher(RequestStore store, LaneLimiter limiter, OutboxWriter gatewayOutboxWriter, PlatformTransactionManager txm, ObjectMapper json) {
+    Dispatcher dispatcher(RequestStore store, LaneLimiter limiter, @Qualifier("gatewayOutboxWriter") OutboxWriter gatewayOutboxWriter, PlatformTransactionManager txm, ObjectMapper json) {
         return new Dispatcher(store, limiter, gatewayOutboxWriter, new TransactionTemplate(txm), json);
     }
 
@@ -95,7 +98,12 @@ class GatewayConfig {
 
     // ---- ports supplied over HTTP when a base URL is configured (tests and the demo wiring supply their own otherwise) -------------------
 
+    /**
+     * The quota lookup adapter is identical in every service that needs it, so when several services share one JVM the first definition wins
+     * (ConditionalOnMissingBean) instead of registering the same bean three times.
+     */
     @Bean
+    @ConditionalOnMissingBean(QuotaDirectory.class)
     @ConditionalOnProperty("commodity.trade.base-url")
     QuotaDirectory quotaDirectory(RestClient.Builder builder, @Value("${commodity.trade.base-url}") String baseUrl) {
         return new HttpQuotaDirectory(builder, baseUrl);
@@ -130,8 +138,10 @@ class GatewayConfig {
     }
 
     @Bean
+    @ConditionalOnMissingBean(CommonErrorHandler.class) // see PricingConfig: one shared handler when several services run in one JVM
     @ConditionalOnProperty("commodity.gateway.workers.enabled")
-    DefaultErrorHandler gatewayErrorHandler(KafkaTemplate<?, ?> kafka, @Value("${commodity.gateway.consumer.retry-interval-ms:1000}") long intervalMs) {
+    DefaultErrorHandler gatewayErrorHandler(KafkaTemplate<?, ?> kafka,
+                                            @Value("${commodity.consumer.retry-interval-ms:${commodity.gateway.consumer.retry-interval-ms:1000}}") long intervalMs) {
         return DlqErrorHandler.create(kafka, intervalMs, 3);
     }
 }

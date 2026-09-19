@@ -10,7 +10,9 @@ include(
     "services:logistics",
     "services:pricing",
     "services:valuation-gateway",
+    "services:blotter",
     "services:stubs",
     "benchmark",
     "demo-seed",
+    "app",
 )

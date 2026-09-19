@@ -2,9 +2,14 @@ package io.commodity.gateway.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.commodity.contracts.events.Topics;
 import io.commodity.contracts.events.ValuationCompleted;
+import io.commodity.contracts.events.ValuationPublished;
 import io.commodity.gateway.domain.LaneLimiter;
 import io.commodity.gateway.repository.RequestStore;
+import io.commodity.platform.outbox.OutboxMessage;
+import io.commodity.platform.outbox.OutboxWriter;
+import org.springframework.beans.factory.annotation.Qualifier;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,19 +37,25 @@ public class ReplyHandler {
     private final RequestStore store;
     private final LaneLimiter limiter;
     private final ObjectMapper json;
+    private final OutboxWriter outbox;
 
-    public ReplyHandler(RequestStore store, LaneLimiter limiter, ObjectMapper json) {
+    public ReplyHandler(RequestStore store, LaneLimiter limiter, ObjectMapper json, @Qualifier("gatewayOutboxWriter") OutboxWriter outbox) {
         this.store = store;
         this.limiter = limiter;
         this.json = json;
+        this.outbox = outbox;
     }
 
     @Transactional
     public void handle(ValuationCompleted reply) {
         if (reply.success()) {
             String result = toJson(Map.of("value", reply.result(), "engine", reply.engine().name()));
-            store.complete(reply.requestId(), result).ifPresentOrElse(limiter::release,
-                    () -> log.info("ignored reply for {}: not SENT any more (duplicate or late)", reply.requestId()));
+            store.complete(reply.requestId(), result).ifPresentOrElse(done -> {
+                limiter.release(done.lane());
+                // Result fan-out, in the same transaction as the COMPLETED transition: published if and only if the request really completed.
+                outbox.append(OutboxMessage.of(Topics.VALUATION_PUBLISHED, done.subjectRef(), toJson(new ValuationPublished(reply.requestId(), done.requestKey(),
+                        done.subjectRef(), done.level(), done.brd(), done.engine(), reply.result(), java.time.Instant.now())), done.brd(), "valuation-gateway"));
+            }, () -> log.info("ignored reply for {}: not SENT any more (duplicate or late)", reply.requestId()));
         } else {
             store.failOrRetry(reply.requestId(), reply.error(), MAX_ATTEMPTS).ifPresentOrElse(t -> limiter.release(t.lane()),
                     () -> log.info("ignored error reply for {}: not SENT any more", reply.requestId()));

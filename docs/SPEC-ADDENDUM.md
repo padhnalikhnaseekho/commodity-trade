@@ -102,3 +102,35 @@ The spec's exit criterion "<= 60 rows under sharing, >= 900 under copy-all" is r
 - **Engine reply** is a direct Kafka send from the stub adapter, not through an outbox: the adapter has no database, so there is nothing for an outbox row to be
   atomic with. A lost reply costs a retry by the watchdog, not a wrong answer.
 - **Result shape** is `{"value": "<decimal string>", "engine": "LEGACY|MODERN"}`; the spec did not define it.
+
+## P0.5 confirmed by the owner
+| Item | Decision |
+|---|---|
+| Blotter columns | The spec columns, where `status` is the assignment lifecycle, plus the approval status and a **provisional** badge on valuations |
+| RM valuation in the blotter | An RM quota is valued at QUOTA level; the quota number is shown on **every assignment row** of that quota, marked level `QUOTA` (no pro-rata split: none was specified) |
+| Seed mix | 50 trades across all four business lines and **three desks**: RM (copper cathode, nickel), concentrates (copper, zinc), bulk (coal, iron ore), energy (crude oil); purchases and sales; monthly, weekly and custom delivery; 1-3 assignments per quota; parameters; partial fixations; mixed approval; some RM trades pinned to the legacy engine by the override |
+| Blotter backend | Its own service module (`services/blotter`), not part of pricing |
+| One JVM and profiles | The app runs every service in one JVM by default, **and** each service sits behind its own Spring profile so the same artifact runs as any subset (see phase notes P0.5) |
+
+## P0.5 deviations from the spec, and assumptions (mine; confirm or correct)
+- **DEVIATION (bug found by the end-to-end test): the revision in force is resolved by the insertion sequence (`id`), not by `created_at`.** The spec tie-breaks by
+  `created_at DESC`. Wall-clock time is not monotonic (NTP and hypervisor time sync step it backwards, and servers disagree), so a revision written later can carry an
+  earlier timestamp and the as-of read returned a STALE revision, which looked like a lost update. Ordering is now `brd DESC, id DESC` for pricing revisions, pricing
+  approvals and QAG revisions (migrations pricing V4, logistics V4). `created_at` stays as an audit column. Regression tests insert a later revision stamped an hour earlier.
+- **DEVIATION: valuation results are published by the gateway** (`valuation.published.v1`, key subjectRef), not by pricing (`pricing.valuation.published.v1`), because
+  the gateway holds the results and pricing does not consume replies in this build.
+- **NEW topic: `pricing.quota.published.v1`** (key quotaRef): pricing publishes a full snapshot of a quota (priced, unpriced, over-fixed, approval per assignment) after every
+  pricing revision and every approval, through its outbox. The blotter is built from this and the valuation results.
+- **Blotter `status`** is ACTIVE while pricing lists the assignment in its quota and REMOVED once a later snapshot drops it; the reason (cancelled, superseded, deleted) is not
+  published (revision events carry membership only), so removed assignments simply leave the view. The as-of view still shows them on earlier dates.
+- **Blotter valuation columns:** valuation, valuationAsOf, plus level, engine and `provisional`. Provisional is derived at read time from the CURRENT approval state (assignment level:
+  this assignment unapproved; quota level: any assignment of the quota unapproved), never stored.
+- **Blotter as-of:** `GET /api/blotter?deskId=&brd=`; without `brd` it is the live view. A row is resolved per assignment as the latest row with `brd <=` the date.
+- **Live push:** Server-Sent Events, JSON Patch operations per row, coalesced per row every 250 ms, a bounded replay buffer of 1,000 events with `Last-Event-ID`, and a `reset`
+  event when a client has been away longer than the buffer holds.
+- **Run command:** `./gradlew :app:bootRun` (also `./gradlew bootRun` from the root). The stub engine adapter is switched by `commodity.engine.enabled`.
+- **Profiles:** each service (trade, logistics, pricing, gateway, blotter) and the stand-ins (`stubs`) has a profile. The business-day clock and the functional-line reference data
+  are still in-process stubs (Java ports), so any process running a service that needs them also runs the `stubs` profile.
+- **The seed** goes through the public API (it depends on no service module), is deterministic for a given seed, and is not idempotent (running it twice creates two books).
+- **Test environment:** container start-up is retried, and Testcontainers' cleanup helper (Ryuk) is disabled, because host-port collisions on this machine's narrow ephemeral port
+  range made container starts fail intermittently. If a test JVM is killed hard, `docker ps` shows any leftovers.

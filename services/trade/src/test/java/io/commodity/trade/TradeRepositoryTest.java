@@ -30,7 +30,7 @@ class TradeRepositoryTest {
 
     @Container
     @ServiceConnection
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16").withStartupAttempts(5);
 
     @Autowired TradeRepository trades;
     @Autowired QuotaRepository quotas;

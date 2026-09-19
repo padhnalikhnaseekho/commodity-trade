@@ -61,12 +61,16 @@ public class RevisionStore {
     }
 
     /**
-     * The revision in force for a quota as of a BRD: the latest with brd &lt;= asOf, tie-broken by creation time (then id,
-     * which only matters for identical timestamps). Served by the (quota_ref, brd, created_at DESC) index.
+     * The revision in force for a quota as of a BRD: the latest with brd &lt;= asOf, tie-broken by the INSERTION SEQUENCE (id).
+     *
+     * <p>WHY id and not created_at (the spec says created_at): created_at is wall-clock time, and wall clocks are not monotonic (NTP and hypervisor time sync
+     * step them, and servers disagree). A revision written later can carry an EARLIER timestamp, and resolving by it returns a STALE revision. The id is a
+     * sequence, and all writers of a quota hold its advisory lock, so id order is the logical order. Served by the (quota_ref, brd DESC, id DESC) index.
+     * A regression test (RevisionWritersTest) inserts a later revision with an earlier created_at and asserts it still wins.
      */
     public Optional<QuotaRevisionRow> asOf(String quotaRef, LocalDate asOf) {
         return jdbc.query("SELECT " + ROW_COLUMNS + " FROM pricing.quota_revision WHERE quota_ref = ? AND brd <= ?"
-                        + " ORDER BY brd DESC, created_at DESC, id DESC LIMIT 1", RevisionStore::row, quotaRef, asOf).stream().findFirst();
+                        + " ORDER BY brd DESC, id DESC LIMIT 1", RevisionStore::row, quotaRef, asOf).stream().findFirst();
     }
 
     public List<QuotaRevisionRow> revisions(String quotaRef) {
@@ -221,10 +225,10 @@ public class RevisionStore {
         jdbc.update("INSERT INTO pricing.assignment_approval (assignment_ref, status, brd) VALUES (?, ?, ?)", assignmentRef, status.name(), brd);
     }
 
-    /** Latest approval as of a BRD; no record at all means UNAPPROVED. */
+    /** Latest approval as of a BRD (by insertion sequence, see {@link #asOf}); no record at all means UNAPPROVED. */
     public ApprovalStatus approvalAsOf(String assignmentRef, LocalDate asOf) {
         return jdbc.query("SELECT status FROM pricing.assignment_approval WHERE assignment_ref = ? AND brd <= ?"
-                        + " ORDER BY brd DESC, created_at DESC, id DESC LIMIT 1", (rs, i) -> ApprovalStatus.valueOf(rs.getString(1)), assignmentRef, asOf)
+                        + " ORDER BY brd DESC, id DESC LIMIT 1", (rs, i) -> ApprovalStatus.valueOf(rs.getString(1)), assignmentRef, asOf)
                 .stream().findFirst().orElse(ApprovalStatus.UNAPPROVED);
     }
 }

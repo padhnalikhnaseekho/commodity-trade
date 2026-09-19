@@ -47,7 +47,7 @@ class PricingApiTest {
 
     @Container
     @ServiceConnection
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16").withStartupAttempts(5);
 
     static final Map<String, QuotaView> QUOTAS = new ConcurrentHashMap<>();
     static final AtomicReference<LocalDate> BRD = new AtomicReference<>(LocalDate.of(2026, 9, 18));
@@ -358,5 +358,32 @@ class PricingApiTest {
 
         mvc.perform(post("/api/replay").contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());
         mvc.perform(post("/api/replay").contentType(MediaType.APPLICATION_JSON).content("{\"quotaRef\":\"999.1\"}")).andExpect(status().isNotFound());
+    }
+
+    // PROVES the read-model feed: every pricing change and every approval leaves a FULL quota snapshot in the outbox (same transaction), carrying the derived
+    // priced/unpriced quantities and the approval state, keyed by quota so a quota's snapshots stay in order.
+    @Test
+    void everyPricingChangeAndApprovalPublishesAQuotaSnapshot() throws Exception {
+        seed("216.1", "1", "100", "2", "40");
+        fix("216.1.1", "30");
+        mvc.perform(post("/api/assignments/216.1.2/approval").contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"APPROVED\"}")).andExpect(status().isCreated());
+
+        List<String> payloads = jdbc.queryForList("SELECT payload FROM pricing.outbox WHERE topic = 'pricing.quota.published.v1' AND msg_key = '216.1' ORDER BY id", String.class);
+        assertThat(payloads).hasSize(3); // the seeding revision, the fixation, the approval
+
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper().registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+        var fixation = mapper.readValue(payloads.get(1), io.commodity.contracts.events.PricingQuotaPublished.class);
+        assertThat(fixation.cause()).isEqualTo("REVISION");
+        assertThat(fixation.assignments()).hasSize(2);
+        var first = fixation.assignments().get(0);
+        assertThat(first.assignmentRef()).isEqualTo("216.1.1");
+        assertThat(first.pricedQty()).isEqualByComparingTo("30");
+        assertThat(first.unpricedQty()).isEqualByComparingTo("70");
+        assertThat(first.approvalStatus()).isEqualTo("UNAPPROVED");
+
+        var approval = mapper.readValue(payloads.get(2), io.commodity.contracts.events.PricingQuotaPublished.class);
+        assertThat(approval.cause()).isEqualTo("APPROVAL");
+        assertThat(approval.pqrId()).isEqualTo(fixation.pqrId());                               // approval is not a revision: same pqrId
+        assertThat(approval.assignments().get(1).approvalStatus()).isEqualTo("APPROVED");
     }
 }

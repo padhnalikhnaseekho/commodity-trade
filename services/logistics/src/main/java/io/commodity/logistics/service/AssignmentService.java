@@ -19,6 +19,7 @@ import io.commodity.platform.outbox.OutboxWriter;
 import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,7 +57,7 @@ public class AssignmentService {
 
     public AssignmentService(AssignmentRepository assignments, QagRevisionRepository revisions,
                              QagRevisionMemberRepository members, QuotaDirectory quotaDirectory, FixationDirectory fixations, BusinessDayClock clock,
-                             OutboxWriter outbox, ObjectMapper json, JdbcTemplate jdbc) {
+                             @Qualifier("logisticsOutboxWriter") OutboxWriter outbox, ObjectMapper json, JdbcTemplate jdbc) {
         this.assignments = assignments;
         this.revisions = revisions;
         this.members = members;
@@ -153,7 +154,7 @@ public class AssignmentService {
     /** Latest revision as of a BRD, plus its members (numeric order). */
     @Transactional(readOnly = true)
     public Optional<RevisionWithMembers> revisionAsOf(String quotaRef, java.time.LocalDate asOf) {
-        return revisions.findByQuotaRefAndBrdLessThanEqualOrderByBrdDescCreatedAtDesc(quotaRef, asOf).stream().findFirst()
+        return revisions.findByQuotaRefAndBrdLessThanEqualOrderByBrdDescIdDesc(quotaRef, asOf).stream().findFirst()
                 .map(r -> new RevisionWithMembers(r, sortedMembers(r.getQagrId())));
     }
 

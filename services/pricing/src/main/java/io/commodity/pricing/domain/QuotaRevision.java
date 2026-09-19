@@ -40,6 +40,7 @@ public class QuotaRevision {
     @Column(nullable = false)
     private LocalDate brd;
 
+    // Audit only: nothing may order revisions by this wall-clock time (see V4 migration); the id sequence is the order.
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
 

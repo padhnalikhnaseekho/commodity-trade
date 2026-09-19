@@ -103,7 +103,7 @@ public class TradeService {
         Quota q = quotas.findByTradeIdOrderBySeq(t.getId()).stream().filter(x -> x.getSeq() == parsed.seq()).findFirst()
                 .orElseThrow(() -> notFound("quota", quotaRef));
         return new QuotaView(q.getQuotaRef(), t.getTradeRef(), t.getDeskId(), t.getBusinessLine().name(), q.getQty(),
-                t.getCreatedBrd(), t.getFunctionalLine());
+                t.getCreatedBrd(), t.getFunctionalLine(), t.getCommodity());
     }
 
     /** Parses a quantity string and enforces the four-decimal scale rule instead of silently rounding. */

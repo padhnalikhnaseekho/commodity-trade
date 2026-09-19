@@ -109,11 +109,15 @@ public class RequestStore {
                 + " WHERE request_id = ? AND status = 'PENDING'", requestId) == 1;
     }
 
-    /** SENT -> COMPLETED. Returns the lane (to release its slot) if THIS call made the transition; empty for a duplicate or late reply. */
-    public Optional<Lane> complete(UUID requestId, String resultJson) {
+    /** What a completed request tells the outside world: enough for the result fan-out event. */
+    public record Completed(Lane lane, String requestKey, String subjectRef, SubjectLevel level, LocalDate brd, ValuationEngine engine) {}
+
+    /** SENT -> COMPLETED. Returns the request's details if THIS call made the transition; empty for a duplicate or late reply. */
+    public Optional<Completed> complete(UUID requestId, String resultJson) {
         return jdbc.query("UPDATE gateway.valuation_request SET status = 'COMPLETED', result = ?::jsonb, error = NULL, completed_at = now(),"
-                        + " version = version + 1 WHERE request_id = ? AND status = 'SENT' RETURNING lane",
-                (rs, i) -> Lane.valueOf(rs.getString(1)), resultJson, requestId).stream().findFirst();
+                        + " version = version + 1 WHERE request_id = ? AND status = 'SENT' RETURNING lane, request_key, subject_ref, subject_level, brd, engine",
+                (rs, i) -> new Completed(Lane.valueOf(rs.getString(1)), rs.getString(2), rs.getString(3), SubjectLevel.valueOf(rs.getString(4)),
+                        rs.getObject(5, LocalDate.class), ValuationEngine.valueOf(rs.getString(6))), resultJson, requestId).stream().findFirst();
     }
 
     /**

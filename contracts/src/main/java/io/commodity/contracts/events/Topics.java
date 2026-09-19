@@ -19,4 +19,9 @@ public final class Topics {
     public static final String VALUATION_REQUEST = "valuation.request.v1";
     /** The engine adapter's reply to the gateway. One shared reply topic, not one per gateway instance. Key: requestId. */
     public static final String VALUATION_REPLY = "valuation.reply.v1";
+
+    /** A quota's pricing changed (revision or approval): the full snapshot. Key: quotaRef. Consumed by the blotter. */
+    public static final String PRICING_QUOTA_PUBLISHED = "pricing.quota.published.v1";
+    /** A valuation completed. Key: subjectRef. Consumed by the blotter. */
+    public static final String VALUATION_PUBLISHED = "valuation.published.v1";
 }

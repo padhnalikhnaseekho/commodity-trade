@@ -37,3 +37,12 @@ Each entry will point at the class that models it. Filled in as phases land.
 - **Cached**: the response flag showing an answer came from the result cache and no engine was called.
 
 - **Provisional valuation**: a valuation where at least one contributing assignment is not yet approved. Reported as `provisional` on submission and `provisionalAtRequest` on reads.
+
+## Added in P0.5
+- **Blotter**: the flat read model the UI shows, one row per assignment, built from pricing snapshots and valuation results. Disposable: rebuilt from events. `services/blotter`.
+- **Snapshot event**: pricing's full picture of a quota after each change (`pricing.quota.published.v1`). `PricingQuotaPublished`.
+- **Row change / patch**: a JSON Patch delta for one blotter row; coalesced before it is pushed. `RowChange`, `RowPatch`.
+- **SSE**: Server-Sent Events, the one-way push channel to the browser, resumable with `Last-Event-ID`. `RowBroadcaster`, `BlotterController`.
+- **As-of picker**: the UI control that re-resolves every row at a past BRD.
+- **Profile**: a Spring switch that loads one service (or the stand-ins) into the shared JVM. The module classes (`PricingModule` and so on).
+- **Insertion sequence ordering**: revisions are ordered by their sequence id, never by wall-clock time. Pricing V4 and logistics V4 migrations.

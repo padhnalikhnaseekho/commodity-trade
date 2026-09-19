@@ -31,7 +31,7 @@ class TradeApiTest {
 
     @Container
     @ServiceConnection
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16").withStartupAttempts(5);
 
     /** Business Day Control belongs to another service; the test supplies a fixed desk date behind the port. */
     @TestConfiguration

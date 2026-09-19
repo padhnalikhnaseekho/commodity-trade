@@ -46,7 +46,7 @@ class StubEngineAdapterTest {
     static class App {}
 
     @Container
-    static RedpandaContainer redpanda = new RedpandaContainer("docker.redpanda.com/redpandadata/redpanda:v23.3.10");
+    static RedpandaContainer redpanda = new RedpandaContainer("docker.redpanda.com/redpandadata/redpanda:v23.3.10").withStartupAttempts(5);
 
     @DynamicPropertySource
     static void kafka(DynamicPropertyRegistry registry) {

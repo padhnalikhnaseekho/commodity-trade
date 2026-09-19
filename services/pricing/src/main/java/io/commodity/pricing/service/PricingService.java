@@ -40,13 +40,16 @@ public class PricingService {
     private final QuotaDirectory quotaDirectory;
     private final BusinessDayClock clock;
     private final JdbcTemplate jdbc;
+    private final PricingPublisher publisher;
 
-    public PricingService(RevisionStore store, RevisionWriter writer, QuotaDirectory quotaDirectory, BusinessDayClock clock, JdbcTemplate jdbc) {
+    public PricingService(RevisionStore store, RevisionWriter writer, QuotaDirectory quotaDirectory, BusinessDayClock clock, JdbcTemplate jdbc,
+                          PricingPublisher publisher) {
         this.store = store;
         this.writer = writer;
         this.quotaDirectory = quotaDirectory;
         this.clock = clock;
         this.jdbc = jdbc;
+        this.publisher = publisher;
     }
 
     public record Written(UUID itemId, UUID pqrId) {}
@@ -83,6 +86,9 @@ public class PricingService {
         currentContent(quotaRef, assignmentRef); // 404 if pricing does not know the assignment
         LocalDate brd = clock.currentBrd(quota.deskId());
         store.insertApproval(assignmentRef, status, brd);
+        // Approval is not a revision, so the snapshot re-publishes the quota's CURRENT revision with the new approval state.
+        var head = store.head(quotaRef).orElseThrow();
+        publisher.publish(quotaRef, head.pqrId(), brd, "APPROVAL", store.loadAssignments(head.pqrId()));
         return brd;
     }
 
@@ -147,7 +153,9 @@ public class PricingService {
         LocalDate brd = clock.currentBrd(quota.deskId());
         BrdGuard.requireOpen(quotaRef, brd, brd); // a user-driven change is always on the desk's open BRD
         // The revision keeps pointing at the same logistics revision: a price change does not change the physical graph.
-        return writer.write(QuotaRef.parse(quotaRef), head.qagrId(), brd, next).pqrId();
+        UUID pqrId = writer.write(QuotaRef.parse(quotaRef), head.qagrId(), brd, next).pqrId();
+        publisher.publish(quotaRef, pqrId, brd, "REVISION", next); // same transaction: the snapshot exists if and only if the revision does
+        return pqrId;
     }
 
     private AssignmentContent currentContent(String quotaRef, String assignmentRef) {

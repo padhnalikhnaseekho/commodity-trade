@@ -29,7 +29,7 @@ class PricingRepositoryTest {
 
     @Container
     @ServiceConnection
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16").withStartupAttempts(5);
 
     @Autowired QuotaRevisionRepository quotaRevisions;
     @Autowired AssignmentRevisionRepository assignmentRevisions;
