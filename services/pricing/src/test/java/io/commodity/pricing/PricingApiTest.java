@@ -11,6 +11,9 @@ import io.commodity.contracts.events.ChangeKind;
 import io.commodity.contracts.events.QagRevisionEvent;
 import io.commodity.contracts.lookup.BusinessDayClock;
 import io.commodity.contracts.lookup.QuotaDirectory;
+import io.commodity.contracts.valuation.Lane;
+import io.commodity.contracts.valuation.SubjectLevel;
+import io.commodity.contracts.valuation.ValuationSubmitter;
 import io.commodity.contracts.lookup.QuotaView;
 import io.commodity.platform.error.DomainException;
 import io.commodity.pricing.service.QagRevisionHandler;
@@ -53,7 +56,17 @@ class PricingApiTest {
     static class Ports {
         @Bean QuotaDirectory quotaDirectory() { return ref -> Optional.ofNullable(QUOTAS.get(ref)); }
         @Bean BusinessDayClock clock() { return desk -> BRD.get(); }
+
+        /** The gateway is another service: replay talks to it through a port, and the test records what it was asked. */
+        @Bean ValuationSubmitter gateway() {
+            return (ref, level, brd, lane, restatement, source) -> {
+                SUBMISSIONS.add(new Object[] {ref, level, brd, lane, restatement, source});
+                return new ValuationSubmitter.Submission(UUID.randomUUID(), "sha256:" + ref, "COMPLETED", true);
+            };
+        }
     }
+
+    static final List<Object[]> SUBMISSIONS = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -301,5 +314,49 @@ class PricingApiTest {
                 .andExpect(status().isNotFound());
         mvc.perform(get("/api/valuation-inputs").param("subjectRef", "213.1.1").param("subjectLevel", "ASSIGNMENT").param("asOf", "2026-01-01"))
                 .andExpect(status().isNotFound()); // nothing existed on that date
+    }
+
+    // PROVES replay: it re-requests valuation for every assignment of the stored revision (assignment level outside RM), asks with the
+    // restatement flag at the revision's own BRD, and is READ-ONLY: no pricing revision is written.
+    @Test
+    void replayReRequestsValuationFromTheStoredRevisionWithoutWritingAnything() throws Exception {
+        seed("214.1", "1", "100", "2", "50");
+        fix("214.1.1", "10");
+        int revisions = count("SELECT count(*) FROM pricing.quota_revision WHERE quota_ref = '214.1'");
+        SUBMISSIONS.clear();
+
+        mvc.perform(post("/api/replay").contentType(MediaType.APPLICATION_JSON).content("{\"quotaRef\":\"214.1\"}"))
+                .andExpect(status().isAccepted()).andExpect(jsonPath("$.requests", hasSize(2)))
+                .andExpect(jsonPath("$.requests[0].cached").value(true)).andExpect(jsonPath("$.brd").value("2026-09-18"));
+
+        assertThat(SUBMISSIONS).hasSize(2).allSatisfy(c -> {
+            assertThat(c[1]).isEqualTo(SubjectLevel.ASSIGNMENT);
+            assertThat(c[2]).isEqualTo(LocalDate.of(2026, 9, 18));
+            assertThat(c[3]).isEqualTo(Lane.BULK);
+            assertThat(c[4]).isEqualTo(true);      // restatement: reproducing a past date is a restatement of history
+            assertThat(c[5]).isEqualTo("pricing-replay");
+        });
+        assertThat(count("SELECT count(*) FROM pricing.quota_revision WHERE quota_ref = '214.1'")).isEqualTo(revisions); // read-only
+    }
+
+    @Test
+    void replayForRmValuesAtQuotaLevelAndByRevisionIdAndRefusesASupersededRevision() throws Exception {
+        QUOTAS.put("215.1", new QuotaView("215.1", "215", "DESK-1", "RM", new BigDecimal("100000")));
+        handler.handle(UUID.randomUUID(), event("215.1", BRD.get(), "1", "100", "2", "50"));
+        String first = JsonPath.read(mvc.perform(get("/api/quotas/215.1/revisions")).andReturn().getResponse().getContentAsString(), "$[0].pqrId");
+        SUBMISSIONS.clear();
+
+        mvc.perform(post("/api/replay").contentType(MediaType.APPLICATION_JSON).content("{\"pqrId\":\"" + first + "\"}"))
+                .andExpect(status().isAccepted()).andExpect(jsonPath("$.requests", hasSize(1)));   // one quota-level request, not one per assignment
+        assertThat(SUBMISSIONS.get(0)[0]).isEqualTo("215.1");
+        assertThat(SUBMISSIONS.get(0)[1]).isEqualTo(SubjectLevel.QUOTA);
+
+        fix("215.1.1", "10"); // a newer revision on the SAME business date supersedes the first for resolution by date
+        mvc.perform(post("/api/replay").contentType(MediaType.APPLICATION_JSON).content("{\"pqrId\":\"" + first + "\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.type").value(endsWith("revision-superseded-on-brd")));
+        mvc.perform(post("/api/replay").contentType(MediaType.APPLICATION_JSON).content("{\"quotaRef\":\"215.1\"}")).andExpect(status().isAccepted());
+
+        mvc.perform(post("/api/replay").contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/replay").contentType(MediaType.APPLICATION_JSON).content("{\"quotaRef\":\"999.1\"}")).andExpect(status().isNotFound());
     }
 }

@@ -1,11 +1,13 @@
 package io.commodity.pricing.config;
 
 import io.commodity.contracts.lookup.QuotaDirectory;
+import io.commodity.contracts.valuation.ValuationSubmitter;
 import io.commodity.platform.error.ProblemAdvice;
 import io.commodity.platform.eventing.DedupStore;
 import io.commodity.platform.eventing.DlqErrorHandler;
 import io.commodity.platform.eventing.PeriodicTask;
 import io.commodity.platform.lookup.HttpQuotaDirectory;
+import io.commodity.platform.lookup.HttpValuationSubmitter;
 import io.commodity.pricing.repository.RevisionStore;
 import io.commodity.pricing.service.CopyAllRevisionWriter;
 import io.commodity.pricing.service.RevisionWriter;
@@ -59,6 +61,13 @@ class PricingConfig {
     @ConditionalOnProperty("commodity.trade.base-url")
     QuotaDirectory quotaDirectory(RestClient.Builder builder, @Value("${commodity.trade.base-url}") String baseUrl) {
         return new HttpQuotaDirectory(builder, baseUrl);
+    }
+
+    /** The valuation gateway over HTTP, used by replay. Active only when its base URL is configured. */
+    @Bean
+    @ConditionalOnProperty("commodity.gateway.base-url")
+    ValuationSubmitter valuationSubmitter(RestClient.Builder builder, @Value("${commodity.gateway.base-url}") String baseUrl) {
+        return new HttpValuationSubmitter(builder, baseUrl);
     }
 
     /**

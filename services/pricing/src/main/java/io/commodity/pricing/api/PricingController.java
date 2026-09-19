@@ -6,6 +6,7 @@ import io.commodity.platform.error.DomainException;
 import io.commodity.platform.error.Parse;
 import io.commodity.pricing.domain.*;
 import io.commodity.pricing.service.PricingService;
+import io.commodity.pricing.service.ReplayService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -24,9 +25,11 @@ import org.springframework.web.bind.annotation.*;
 public class PricingController {
 
     private final PricingService service;
+    private final ReplayService replay;
 
-    public PricingController(PricingService service) {
+    public PricingController(PricingService service, ReplayService replay) {
         this.service = service;
+        this.replay = replay;
     }
 
     public record Created(UUID id, UUID pqrId) {}
@@ -89,6 +92,19 @@ public class PricingController {
         SubjectLevel level = Parse.enumValue(SubjectLevel.class, subjectLevel, "subjectLevel");
         return service.valuationInputs(subjectRef, level, asOf).orElseThrow(() -> new DomainException(404, "not-found",
                 "No pricing for the subject as of that date").with("subjectRef", subjectRef).with("asOf", asOf.toString()));
+    }
+
+    /**
+     * Replay: re-request valuation from a stored revision, by quota ref (its latest revision) or by revision id. Read-only with respect to
+     * revisions. 202 because valuation is asynchronous; already-computed answers come back as cache hits.
+     */
+    @PostMapping("/replay")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ReplayService.Result replay(@RequestBody PricingRequests.Replay body) {
+        if ((body.quotaRef() == null) == (body.pqrId() == null)) {
+            throw new DomainException(400, "invalid-request", "Supply exactly one of quotaRef or pqrId");
+        }
+        return body.quotaRef() != null ? replay.replayQuota(body.quotaRef()) : replay.replayRevision(body.pqrId());
     }
 
     @GetMapping("/quotas/{quotaRef}/revisions")

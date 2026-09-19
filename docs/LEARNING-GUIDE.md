@@ -20,4 +20,11 @@ Filled in as each phase lands.
 | What if the same event arrives twice, or a bad one? | `QagRevisionHandler`, `DedupStore`, `QagRevisionConsumerTest` |
 | How is over-fixation prevented under concurrency? | `PricingService.mutate` lock, `PricingApiTest.concurrentFixations...` |
 | Where does approval live and why? | `V2__approval_dedup_and_indexes.sql`, `PricingApiTest.approvalIsAnInsertOnlyRecord...` |
+| Why can the valuation gateway be idempotent? | `RequestKey`, `RequestKeyTest`, `docs/phase-notes/P0.4.md` |
+| What happens if the gateway dies mid-request? | `GatewayRestartTest`, `ReplyHandler`, `GatewayConfig.seedLaneLimiter` |
+| How do you stop bulk work starving interactive work? | `LaneLimiter`, `Dispatcher`, `GatewayLanesTest` |
+| How is a lost or failed engine call handled? | `Watchdog`, `RequestStore.failOrRetry`, `GatewayFlowTest` retry tests |
+| Why is replay a cache hit, and is it read-only? | `ReplayService`, `PricingApiTest.replay...`, `ValuationService` (cache before BRD check) |
+| How is the engine migration expressed? | `InMemoryFunctionalLineDirectory` (cutover date + override) |
+| What does the engine adapter depend on? | Nothing but contracts and platform: `services/stubs/build.gradle.kts` |
 | (more added per phase) | |

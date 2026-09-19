@@ -68,3 +68,31 @@ saving is bounded: they are written on every revision whatever changed.
 The spec's exit criterion "<= 60 rows under sharing, >= 900 under copy-all" is replaced by "35 under sharing, 301 under copy-all"
 (tests assert these exact numbers). The captured "~1,000 rows per revision" also counts rows this demo has no tables for
 (a blotter row per assignment, valuation results).
+
+## P0.4 confirmed by the owner
+| Item | Decision |
+|---|---|
+| FunctionalLine (engine routing) | Default by a CUTOVER DATE (RM trades created before it use RM_LEGACY, later ones RM_MODERN; other business lines always their single modern line), with an optional explicit OVERRIDE chosen at trade creation (`functionalLine` on POST /api/trades, validated against the business line) |
+
+## P0.4 assumptions (mine; confirm or correct)
+- **Who assembles the inputs.** The spec's `POST /api/valuations` takes only `{subjectRef, subjectLevel, brd, lane}`, so the gateway assembles the inputs
+  through a port to pricing (`GET /api/valuation-inputs`). The target design has the CALLER assemble a complete request and the gateway perform no
+  business lookups; the demo keeps the spec's API. What holds either way: the engine adapter receives complete inputs, looks nothing up, and its module
+  depends on no other service.
+- **Approval gates valuation** (owner rule): every assignment contributing to a valuation must be APPROVED as of the BRD, otherwise 409 listing the unapproved
+  ones. For a quota-level request that means all of the quota's assignments.
+- **marketDataAsOf** in the request key is the BRD (no market data exists in P0).
+- **Order of checks:** approval, then cache, then in-flight, then closed-BRD. A cache hit is served even for a closed BRD (that is how replay works);
+  the restatement flag allows NEW work for a closed BRD.
+- **Closed BRD** means a BRD earlier than the desk's current BRD (same rule as pricing writes).
+- **Identical request in flight** collapses into the running one (same requestId returned) instead of starting a second.
+- **Attempts:** at most 3 sends per request. A timeout (lane timeout, watchdog) or an engine error reply sends it back for another attempt, then FAILED.
+  A late or duplicate reply for a request that is no longer SENT is ignored (a retry may then cost one extra engine call; the answer is identical by construction).
+- **Lane defaults** are the spec's illustrative figures: INTERACTIVE 4 in flight / 5s, INVOICE 4 / 15s, BULK 8 / 60s, CLOSE 8 / 60s, all configurable.
+- **Valuation level** is chosen by the caller and not enforced by the gateway. Replay follows the captured default: RM at quota level, every other business
+  line at assignment level.
+- **Replay** sends with the restatement flag on the BULK lane, reads at the revision's own BRD, is read-only, and refuses (409) to replay a revision that a
+  newer revision has superseded on the same BRD, because the gateway resolves inputs by date and would otherwise value different content.
+- **Engine reply** is a direct Kafka send from the stub adapter, not through an outbox: the adapter has no database, so there is nothing for an outbox row to be
+  atomic with. A lost reply costs a retry by the watchdog, not a wrong answer.
+- **Result shape** is `{"value": "<decimal string>", "engine": "LEGACY|MODERN"}`; the spec did not define it.

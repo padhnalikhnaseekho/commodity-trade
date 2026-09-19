@@ -26,3 +26,12 @@ Each entry will point at the class that models it. Filled in as phases land.
 - **Over-fixed**: fixed quantity exceeds the assignment quantity; only reachable through the logistics/pricing race, reported not stored.
 - **Approval**: pricing's insert-only decision that gates eligibility for valuation and P&L. `assignment_approval`.
 - **Dedup marker / DLQ**: `processed_event` (consumer-side eventId dedup) and `<topic>.dlq` (parked poison messages).
+
+## Added in P0.4
+- **Request key**: deterministic hash of a valuation's immutable inputs; the idempotency key. `RequestKey`.
+- **Lane**: INTERACTIVE, INVOICE, BULK, CLOSE; each has its own in-flight budget and timeout. `LaneLimiter`, `LaneSettings`.
+- **Watchdog**: sweep that retries requests SENT longer than their lane timeout, then fails them after 3 attempts. `Watchdog`.
+- **Functional line**: a child of a business line held in reference data; decides the engine (RM_LEGACY, RM_MODERN, ...). `FunctionalLineDirectory`.
+- **Restatement**: a deliberate valuation for a closed business date; the only way to create NEW work for a closed BRD.
+- **Replay**: re-request valuation from a stored revision; read-only, and a cache hit when already answered. `ReplayService`.
+- **Cached**: the response flag showing an answer came from the result cache and no engine was called.

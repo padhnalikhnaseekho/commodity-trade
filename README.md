@@ -8,7 +8,8 @@ an idempotent valuation gateway, and a thin blotter.
 - P0.1 built: schemas, entities, refs, boundary-enforced modules.
 - P0.2 built: quota derivation, assignment write path, QAG revisions with diff events, transactional outbox.
 - P0.3 built: structural sharing (both strategies, benchmark, equivalence property), pricing API, QAG revision consumer with dedup and DLQ.
-- P0.4-P0.5 pending. P1-P3 are designed only.
+- P0.4 built: valuation gateway (idempotent, durable, lanes, watchdog), stub engine adapter, reference-data routing, replay.
+- P0.5 pending. P1-P3 are designed only.
 
 ## Substitutions from the target design
 | Target | Demo |

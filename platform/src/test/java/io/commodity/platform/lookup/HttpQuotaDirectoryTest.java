@@ -82,4 +82,32 @@ class HttpQuotaDirectoryTest {
         assertThatThrownBy(() -> provider.assemble("1.1.3", io.commodity.contracts.valuation.SubjectLevel.ASSIGNMENT, java.time.LocalDate.of(2026, 9, 18)))
                 .isInstanceOf(RestClientException.class);
     }
+
+    // PROVES the submitter maps the gateway's answers: 200 is a cache hit, 202 is accepted, and a 409 refusal keeps the gateway's reason and numbers.
+    @Test
+    void valuationSubmitterMapsCacheHitsAcceptanceAndRefusals() {
+        var submitter = new HttpValuationSubmitter(builder.baseUrl("http://gateway.invalid").build());
+        String id = "00000000-0000-0000-0000-000000000009";
+        server.expect(requestTo("http://gateway.invalid/api/valuations")).andRespond(withSuccess(
+                "{\"requestId\":\"" + id + "\",\"requestKey\":\"sha256:a\",\"status\":\"COMPLETED\",\"result\":{\"value\":\"1\"},\"cached\":true}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://gateway.invalid/api/valuations")).andRespond(
+                org.springframework.test.web.client.response.MockRestResponseCreators.withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"requestId\":\"" + id + "\",\"requestKey\":\"sha256:b\",\"status\":\"PENDING\"}"));
+        server.expect(requestTo("http://gateway.invalid/api/valuations")).andRespond(
+                org.springframework.test.web.client.response.MockRestResponseCreators.withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"type\":\"https://commodity.demo/errors/brd-closed\",\"title\":\"closed\",\"status\":409,\"deskBrd\":\"2026-09-18\"}"));
+
+        var d = java.time.LocalDate.of(2026, 9, 17);
+        var lane = io.commodity.contracts.valuation.Lane.BULK;
+        var level = io.commodity.contracts.valuation.SubjectLevel.ASSIGNMENT;
+        assertThat(submitter.submit("1.1.1", level, d, lane, true, "t").cached()).isTrue();
+        var accepted = submitter.submit("1.1.2", level, d, lane, true, "t");
+        assertThat(accepted.cached()).isFalse();
+        assertThat(accepted.status()).isEqualTo("PENDING");
+        assertThatThrownBy(() -> submitter.submit("1.1.3", level, d, lane, false, "t")).isInstanceOfSatisfying(io.commodity.platform.error.DomainException.class, e -> {
+            assertThat(e.status()).isEqualTo(409);
+            assertThat(e.type()).isEqualTo("brd-closed");
+            assertThat(e.details()).containsEntry("deskBrd", "2026-09-18");
+        });
+    }
 }

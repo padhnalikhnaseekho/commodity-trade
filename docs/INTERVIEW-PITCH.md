@@ -1,6 +1,6 @@
 # Interview pitch: what this demo proves, and how to say it
 
-Built so far: P0.1 to P0.3 (trade, logistics, pricing with structural sharing). Valuation gateway and blotter (P0.4, P0.5) are next.
+Built so far: P0.1 to P0.4 (trade, logistics, pricing with structural sharing, valuation gateway). The blotter and demo harness (P0.5) are next.
 Every number below is reproducible from the repo. Say "built" for what is built and "designed" for the rest.
 
 ## 1. The 30-second opener
@@ -82,6 +82,16 @@ property test proves readers cannot tell the difference."
 - **Improvement:** both writers stay in the codebase behind one interface and a config value.
 - **Say:** "If sharing ever misbehaves, I turn it off without a release. The legacy writer is also the control in the benchmark and the property."
 
+### M2. Idempotent, restart-safe valuation (P0.4)
+- **Improvement:** the request key is a pure function of immutable revision ids, replies are correlated through the database, every state change is a
+  compare-and-set, and lanes bound in-flight work per workload.
+- **Say:** "A valuation is a pure function of immutable inputs, so the same key gives the same answer forever: retries are free, duplicates collapse, and replay is
+  a cache hit instead of a recomputation. I killed a whole gateway with a request in flight and a fresh one finished it from the database alone. A bulk sweep can
+  fill only its own budget, and an interactive request still completes in well under its timeout."
+- **Proof:** `GatewayRestartTest`, `GatewayLanesTest`, `GatewayFlowTest` (engine called once; `cached: true`).
+- **Volunteer this improvement:** the key includes the quota revision id, so repricing one assignment changes every assignment's key in that quota even though structural
+  sharing left the untouched assignments' own ids unchanged. Dropping that one element would let sharing carry into the cache.
+
 ### M. Honest engineering habits (say these if asked how you work)
 - Tests found real defects in my own work: an empty sum reporting `0` instead of `0.0000`, a wrong-way rename in the equivalence check, a missing
   compiler flag that a blanket "400 for any IllegalArgumentException" handler had hidden as a client error. I removed the blanket handler.
@@ -95,6 +105,8 @@ property test proves readers cannot tell the difference."
 | Hashing loads and hashes unchanged assignments | Simplest provably-correct design | Use the event's diff to skip unchanged subtrees; trades read cost for trusting the diff |
 | Polling outbox adds up to one poll interval of latency; per-key order only with one publisher | No CDC dependency in the demo | CDC where a licence exists; consumer-side version checks instead of arrival order |
 | Retries block the partition briefly | Simple fixed back-off | Non-blocking retries on delay topics (5s, 30s, 5m) before the DLQ |
+| Lane budget is in memory (one gateway instance) and lanes share one topic | Demo scope | Derive in-flight from the durable table or a distributed semaphore; a topic and consumer group per lane; adaptive limits |
+| The gateway assembles inputs through a port | The spec's API takes only the subject | The caller assembles a complete request and the gateway does no business lookups |
 | Fixation check is racy | Two services, no shared transaction | Pricing's over-fixed flag is the safety net; a reservation protocol if the business needs a hard guarantee |
 | Lookups have timeouts but no circuit breaker or cache | Demo scope | Resilience4j breaker plus a read-through cache with event invalidation |
 | Dedup TTL bounds the marker table | Bounded storage | TTL must exceed broker retention plus the retry window |
@@ -123,5 +135,5 @@ property test proves readers cannot tell the difference."
 1. `./gradlew :benchmark:run`, the ratio table first; point at the 1.0x row unprompted.
 2. Show `quota_revision_member` and `StructuralSharingRevisionWriter`; then the equivalence property and the broken-writer test.
 3. Show as-of resolution (`RevisionWritersTest`: earlier date never sees a later change); the blotter picker follows in P0.5.
-4. Show idempotency and replay (P0.4).
+4. Post a valuation, then the identical one: `cached: true`, engine call count unchanged; then replay the quota (also a cache hit, and no revision written).
 5. Close honestly: what is built, what is designed, and the limits table above.

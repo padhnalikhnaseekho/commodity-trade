@@ -13,6 +13,9 @@ public final class PricingRequests {
 
     public record Approval(String status) {}
 
+    /** Exactly one of the two: replay the latest revision of a quota, or a specific revision. */
+    public record Replay(String quotaRef, java.util.UUID pqrId) {}
+
     /** Answer of GET /api/assignments/{ref}/fixation (the shape the platform's HttpFixationDirectory reads). */
     public record Fixation(String assignmentRef, boolean fixed) {}
 }
