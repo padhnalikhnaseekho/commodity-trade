@@ -1,0 +1,13 @@
+# Local stand-ins for the target infrastructure (see README "Substitutions").
+services:
+  postgres:            # target: Oracle Exadata
+    image: postgres:16
+    environment:
+      POSTGRES_USER: commodity
+      POSTGRES_PASSWORD: commodity
+      POSTGRES_DB: commodity
+    ports: ["5432:5432"]
+  redpanda:            # target: Kafka on MSK (wire compatible, single node)
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    command: ["redpanda", "start", "--overprovisioned", "--smp", "1", "--memory", "512M", "--node-id", "0", "--kafka-addr", "PLAINTEXT://0.0.0.0:9092", "--advertise-kafka-addr", "PLAINTEXT://localhost:9092"]
+    ports: ["9092:9092"]
