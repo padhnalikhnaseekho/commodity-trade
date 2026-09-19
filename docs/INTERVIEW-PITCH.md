@@ -92,6 +92,13 @@ property test proves readers cannot tell the difference."
 - **Volunteer this improvement:** the key includes the quota revision id, so repricing one assignment changes every assignment's key in that quota even though structural
   sharing left the untouched assignments' own ids unchanged. Dropping that one element would let sharing carry into the cache.
 
+### M3. Provisional valuation instead of a gate (owner correction)
+- **Improvement:** approval must be complete before desk close, but it does not block a valuation. An unapproved assignment is valued and reported provisional;
+  approval is not in the request key, so approving later returns the same cached answer, reported as final, with no engine call.
+- **Say:** "I first assumed approval gated valuation. The business rule is that approval gates the desk close, and provisional numbers are a normal use case, so I
+  changed it: the flag is derived from the current approval state and never stored as if it were current."
+- **Proof:** `GatewayFlowTest.anUnapprovedAssignmentIsValuedAsProvisionalAndBecomesFinalOnceApproved`.
+
 ### M. Honest engineering habits (say these if asked how you work)
 - Tests found real defects in my own work: an empty sum reporting `0` instead of `0.0000`, a wrong-way rename in the equivalence check, a missing
   compiler flag that a blanket "400 for any IllegalArgumentException" handler had hidden as a client error. I removed the blanket handler.
@@ -106,7 +113,7 @@ property test proves readers cannot tell the difference."
 | Polling outbox adds up to one poll interval of latency; per-key order only with one publisher | No CDC dependency in the demo | CDC where a licence exists; consumer-side version checks instead of arrival order |
 | Retries block the partition briefly | Simple fixed back-off | Non-blocking retries on delay topics (5s, 30s, 5m) before the DLQ |
 | Lane budget is in memory (one gateway instance) and lanes share one topic | Demo scope | Derive in-flight from the durable table or a distributed semaphore; a topic and consumer group per lane; adaptive limits |
-| The gateway assembles inputs through a port | The spec's API takes only the subject | The caller assembles a complete request and the gateway does no business lookups |
+| DEVIATION (accepted simplification): the gateway assembles inputs through a port to pricing | The spec's API takes only the subject | The caller assembles a complete request and the gateway does no business lookups, so it does not depend on pricing being up |
 | Fixation check is racy | Two services, no shared transaction | Pricing's over-fixed flag is the safety net; a reservation protocol if the business needs a hard guarantee |
 | Lookups have timeouts but no circuit breaker or cache | Demo scope | Resilience4j breaker plus a read-through cache with event invalidation |
 | Dedup TTL bounds the marker table | Bounded storage | TTL must exceed broker retention plus the retry window |

@@ -46,6 +46,15 @@ public final class Fakes {
         return ref;
     }
 
+    /** Flips the approval of an already registered assignment while keeping every id, exactly like approving in pricing does (approval is not a revision). */
+    static void setApproved(String ref, boolean approved) {
+        SUBJECTS.computeIfPresent(ref + "|" + SubjectLevel.ASSIGNMENT, (k, in) -> {
+            var a = in.assignments().get(0);
+            return new ValuationInputs(in.subjectRef(), in.level(), in.brd(), in.pqrId(), in.qagrId(), in.businessLine(),
+                    List.of(new AssignmentInputs(a.assignmentRef(), a.parId(), a.qty(), approved, a.components(), a.parameters())));
+        });
+    }
+
     private static ComponentInput component() {
         return new ComponentInput(UUID.randomUUID(), "FIXED", new BigDecimal("10"), new BigDecimal("5"), null, null, null, null, false);
     }

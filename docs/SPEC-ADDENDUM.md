@@ -7,7 +7,7 @@ awaiting confirmation. Nothing here changes the spec's own rules.
 | Item | Decision |
 |---|---|
 | `assignment.status` | `ACTIVE`, `SUPERSEDED` (set on the parent after a split), `CANCELLED`, `DELETED` |
-| Assignment approval | `APPROVED` / `UNAPPROVED`. Owned by **pricing** (not logistics): an assignment must be approved to be eligible for valuation and P&L |
+| Assignment approval | `APPROVED` / `UNAPPROVED`. Owned by **pricing** (not logistics). Approval must be complete **before desk close** (a Close of Books check, a later phase). It does NOT gate valuation: valuing an unapproved assignment is normal and produces a **provisional** valuation (see P0.4) |
 | Approval storage (pricing) | A separate insert-only approval record, not a field on the assignment revision, so approving never cuts a pricing revision |
 | Benchmark numbers | The benchmark counts real inserts; the spec's 960/48 are replaced by the measured figures (see P0.3 notes) |
 | Approval and QAG | Approval changes do NOT cut a QAG revision |
@@ -75,14 +75,20 @@ The spec's exit criterion "<= 60 rows under sharing, >= 900 under copy-all" is r
 | FunctionalLine (engine routing) | Default by a CUTOVER DATE (RM trades created before it use RM_LEGACY, later ones RM_MODERN; other business lines always their single modern line), with an optional explicit OVERRIDE chosen at trade creation (`functionalLine` on POST /api/trades, validated against the business line) |
 
 ## P0.4 assumptions (mine; confirm or correct)
-- **Who assembles the inputs.** The spec's `POST /api/valuations` takes only `{subjectRef, subjectLevel, brd, lane}`, so the gateway assembles the inputs
-  through a port to pricing (`GET /api/valuation-inputs`). The target design has the CALLER assemble a complete request and the gateway perform no
-  business lookups; the demo keeps the spec's API. What holds either way: the engine adapter receives complete inputs, looks nothing up, and its module
-  depends on no other service.
-- **Approval gates valuation** (owner rule): every assignment contributing to a valuation must be APPROVED as of the BRD, otherwise 409 listing the unapproved
-  ones. For a quota-level request that means all of the quota's assignments.
+- **DEVIATION FROM THE TARGET DESIGN (accepted simplification): who assembles the inputs.** The spec's `POST /api/valuations` takes only
+  `{subjectRef, subjectLevel, brd, lane}`, so the gateway assembles the inputs through a port to pricing (`GET /api/valuation-inputs`). The target
+  design has the CALLER assemble a complete request and the gateway perform NO business lookups, so it does not depend on pricing being up. The demo
+  keeps the spec's API and accepts this deviation; it is deliberately left as is and is named as a simplification wherever the design is presented.
+  What holds either way: the engine adapter receives complete inputs, looks nothing up, and its module depends on no other service.
+- **Provisional valuation (owner correction, replaces an earlier wrong assumption):** approval does NOT gate valuation; it must be complete before desk close.
+  A valuation is PROVISIONAL when any contributing assignment is not approved as of the BRD (for a quota-level request: any of the quota's assignments).
+  Approval is not part of the request key (the valuation maths are identical), so approving later returns the SAME cached answer, now reported as final.
+  A submission's response reports the CURRENT state (`provisional`); the stored row keeps the state at request time and the API names it
+  `provisionalAtRequest`, so a read never claims a stale value is current. The Close of Books check "all assignments approved" is a later phase (P2).
+  The comments in the committed pricing V2 and logistics V2 migrations still say approval "gates valuation"; they are superseded by this entry
+  (applied migrations are not edited, because Flyway checksums include comments).
 - **marketDataAsOf** in the request key is the BRD (no market data exists in P0).
-- **Order of checks:** approval, then cache, then in-flight, then closed-BRD. A cache hit is served even for a closed BRD (that is how replay works);
+- **Order of checks:** cache, then in-flight, then closed-BRD. A cache hit is served even for a closed BRD (that is how replay works);
   the restatement flag allows NEW work for a closed BRD.
 - **Closed BRD** means a BRD earlier than the desk's current BRD (same rule as pricing writes).
 - **Identical request in flight** collapses into the running one (same requestId returned) instead of starting a second.

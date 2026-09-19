@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.*;
  * REST surface of the valuation gateway: submit, look up one request, browse requests.
  *
  * <p>Submit answers 202 for an accepted (or already in-flight) request, 200 with {@code cached: true} for an answer served from the cache,
- * and 409 for a closed BRD or unapproved assignments. The {@code cached} flag is deliberate: it makes idempotency observable in the demo
+ * and 409 for a closed BRD. Responses to a submission carry {@code provisional}: true while any contributing assignment is unapproved. The {@code cached} flag is deliberate: it makes idempotency observable in the demo
  * instead of something to take on trust. The browse endpoint is the request browser the legacy interface UI had, which clearly earned its keep.
  */
 @RestController
@@ -32,13 +32,14 @@ public class ValuationController {
 
     public record SubmitRequest(String subjectRef, String subjectLevel, LocalDate brd, String lane, Boolean restatement) {}
 
-    public record Accepted(UUID requestId, String requestKey, String status) {}
+    public record Accepted(UUID requestId, String requestKey, String status, boolean provisional) {}
 
-    public record CachedAnswer(UUID requestId, String requestKey, String status, JsonNode result, boolean cached) {}
+    public record CachedAnswer(UUID requestId, String requestKey, String status, JsonNode result, boolean cached, boolean provisional) {}
 
     public record RequestView(UUID requestId, String requestKey, String subjectRef, String subjectLevel, LocalDate brd, String functionalLine,
                               String engine, String lane, String source, String status, int attempts, JsonNode result, String error,
-                              Instant createdAt, Instant sentAt, Instant completedAt) {}
+                              Instant createdAt, Instant sentAt, Instant completedAt,
+                              boolean provisionalAtRequest) {}
 
     private final ValuationService service;
     private final RequestStore store;
@@ -59,9 +60,9 @@ public class ValuationController {
                 Parse.enumValue(Lane.class, body.lane(), "lane"), Boolean.TRUE.equals(body.restatement()), caller);
         return switch (service.submit(cmd)) {
             case ValuationService.Outcome.Accepted a ->
-                    ResponseEntity.status(HttpStatus.ACCEPTED).body(new Accepted(a.requestId(), a.requestKey(), a.status().name()));
+                    ResponseEntity.status(HttpStatus.ACCEPTED).body(new Accepted(a.requestId(), a.requestKey(), a.status().name(), a.provisional()));
             case ValuationService.Outcome.Cached c ->
-                    ResponseEntity.ok(new CachedAnswer(c.requestId(), c.requestKey(), RequestStatus.COMPLETED.name(), json.readTree(c.resultJson()), true));
+                    ResponseEntity.ok(new CachedAnswer(c.requestId(), c.requestKey(), RequestStatus.COMPLETED.name(), json.readTree(c.resultJson()), true, c.provisional()));
         };
     }
 
@@ -88,6 +89,6 @@ public class ValuationController {
     private RequestView view(RequestRow r) throws Exception {
         return new RequestView(r.requestId(), r.requestKey(), r.subjectRef(), r.subjectLevel().name(), r.brd(), r.functionalLine(), r.engine().name(),
                 r.lane().name(), r.source(), r.status().name(), r.attempts(), r.result() == null ? null : json.readTree(r.result()), r.error(),
-                r.createdAt(), r.sentAt(), r.completedAt());
+                r.createdAt(), r.sentAt(), r.completedAt(), r.provisionalAtRequest());
     }
 }

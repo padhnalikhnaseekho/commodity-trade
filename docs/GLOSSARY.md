@@ -24,7 +24,7 @@ Each entry will point at the class that models it. Filled in as phases land.
 - **Quota revision member (the sharing table)**: which assignment revisions a quota revision points at. `quota_revision_member`.
 - **Fixation**: pricing part of an assignment's quantity at a price (a price component). Unpriced quantity = quantity - fixed, derived.
 - **Over-fixed**: fixed quantity exceeds the assignment quantity; only reachable through the logistics/pricing race, reported not stored.
-- **Approval**: pricing's insert-only decision that gates eligibility for valuation and P&L. `assignment_approval`.
+- **Approval**: pricing's insert-only decision; must be complete before desk close. It does not gate valuation (an unapproved assignment is valued provisionally). `assignment_approval`.
 - **Dedup marker / DLQ**: `processed_event` (consumer-side eventId dedup) and `<topic>.dlq` (parked poison messages).
 
 ## Added in P0.4
@@ -35,3 +35,5 @@ Each entry will point at the class that models it. Filled in as phases land.
 - **Restatement**: a deliberate valuation for a closed business date; the only way to create NEW work for a closed BRD.
 - **Replay**: re-request valuation from a stored revision; read-only, and a cache hit when already answered. `ReplayService`.
 - **Cached**: the response flag showing an answer came from the result cache and no engine was called.
+
+- **Provisional valuation**: a valuation where at least one contributing assignment is not yet approved. Reported as `provisional` on submission and `provisionalAtRequest` on reads.

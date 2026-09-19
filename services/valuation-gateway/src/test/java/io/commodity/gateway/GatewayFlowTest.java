@@ -179,13 +179,33 @@ class GatewayFlowTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.cached").value(true)); // replay of a past date: a cache hit
     }
 
-    // PROVES the owner rule: only approved assignments are eligible for valuation.
+    // PROVES the owner rule: approval must be complete before desk close, but it does NOT gate valuation. An unapproved assignment is valued
+    // normally and reported PROVISIONAL; once approved, the SAME cached answer comes back reported as final (approval is not part of the key).
     @Test
-    void unapprovedAssignmentsAreNotEligibleForValuation() throws Exception {
+    void anUnapprovedAssignmentIsValuedAsProvisionalAndBecomesFinalOnceApproved() throws Exception {
         String ref = subject("20", false, null);
+        String first = submit(ref, "2026-09-18", "INTERACTIVE");
+        String id = JsonPath.read(first, "$.requestId");
+        assertThat(JsonPath.<Boolean>read(first, "$.provisional")).isTrue();
+        awaitStatus(id, "COMPLETED");
+        mvc.perform(get("/api/valuations/" + id)).andExpect(jsonPath("$.provisionalAtRequest").value(true)).andExpect(jsonPath("$.result.value").value("2000.0000"));
+
         mvc.perform(post("/api/valuations").contentType(MediaType.APPLICATION_JSON).content(body(ref, "2026-09-18", "INTERACTIVE", false)))
-                .andExpect(status().isConflict()).andExpect(jsonPath("$.type").value(endsWith("assignment-not-approved")))
-                .andExpect(jsonPath("$.unapproved").value(ref));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.cached").value(true)).andExpect(jsonPath("$.provisional").value(true));
+
+        Fakes.setApproved(ref, true); // the assignment is approved in pricing: same revision ids, so the same request key
+        mvc.perform(post("/api/valuations").contentType(MediaType.APPLICATION_JSON).content(body(ref, "2026-09-18", "INTERACTIVE", false)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.cached").value(true))
+                .andExpect(jsonPath("$.provisional").value(false))          // the CURRENT state: now final
+                .andExpect(jsonPath("$.requestId").value(id))               // the same answer, no new engine call
+                .andExpect(jsonPath("$.result.value").value("2000.0000"));
+        assertThat(engine.received.stream().filter(r -> r.requestId().toString().equals(id)).count()).isEqualTo(1);
+    }
+
+    @Test
+    void anApprovedAssignmentIsNotProvisional() throws Exception {
+        String first = submit(subject("25", true, null), "2026-09-18", "INTERACTIVE");
+        assertThat(JsonPath.<Boolean>read(first, "$.provisional")).isFalse();
     }
 
     // PROVES routing is reference data: the trade's functional line decides the engine, carried on the request and visible in the browser.

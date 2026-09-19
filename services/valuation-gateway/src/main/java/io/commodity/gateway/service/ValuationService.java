@@ -18,9 +18,7 @@ import io.commodity.gateway.domain.RequestStatus;
 import io.commodity.gateway.repository.RequestStore;
 import io.commodity.platform.error.DomainException;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,8 +28,9 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Flow (the order is deliberate):
  * <ol>
- *   <li>Assemble the inputs from pricing's immutable revisions as of the BRD; refuse if any assignment is not APPROVED (approval gates
- *       eligibility for valuation and P&amp;L).</li>
+ *   <li>Assemble the inputs from pricing's immutable revisions as of the BRD. Approval does NOT gate valuation: an assignment that is not yet
+ *       approved is valued normally and the answer is reported as PROVISIONAL (approval must be complete before the desk closes, not before a
+ *       number can be produced).</li>
  *   <li>Derive the deterministic request key.</li>
  *   <li>CACHE: a COMPLETED request with that key returns immediately, marked {@code cached: true}. This comes BEFORE the closed-BRD check, so
  *       replaying a past date is a cache hit rather than an error or a recomputation.</li>
@@ -52,8 +51,8 @@ public class ValuationService {
 
     /** Result of a submission: a new or in-flight request, or an already-computed answer from the cache. */
     public sealed interface Outcome {
-        record Accepted(UUID requestId, String requestKey, RequestStatus status) implements Outcome {}
-        record Cached(UUID requestId, String requestKey, String resultJson) implements Outcome {}
+        record Accepted(UUID requestId, String requestKey, RequestStatus status, boolean provisional) implements Outcome {}
+        record Cached(UUID requestId, String requestKey, String resultJson, boolean provisional) implements Outcome {}
     }
 
     private final ValuationInputsProvider inputsProvider;
@@ -84,17 +83,19 @@ public class ValuationService {
         ValuationInputs inputs = inputsProvider.assemble(cmd.subjectRef(), cmd.level(), cmd.brd())
                 .orElseThrow(() -> new DomainException(404, "no-pricing", "No pricing for the subject as of that date")
                         .with("subjectRef", cmd.subjectRef()).with("brd", cmd.brd().toString()));
-        requireApproved(inputs);
+        // PROVISIONAL = some contributing assignment is not yet approved as of the BRD. Derived from the inputs we just assembled, so a
+        // response always reports the CURRENT approval state, even when the number itself comes from the cache.
+        boolean provisional = inputs.assignments().stream().anyMatch(a -> !a.approved());
 
         // marketDataAsOf: the market data date the valuation is struck against. No market data exists in P0, so it is the BRD.
         String key = RequestKey.of(inputs, line.name(), cmd.brd());
         jdbc.query("SELECT pg_advisory_xact_lock(hashtext(?))", rs -> {}, "gateway.key:" + key);
 
         var cached = store.findCompletedByKey(key);
-        if (cached.isPresent()) return new Outcome.Cached(cached.get().requestId(), key, cached.get().result());
+        if (cached.isPresent()) return new Outcome.Cached(cached.get().requestId(), key, cached.get().result(), provisional);
 
         var inFlight = store.findInFlightByKey(key);
-        if (inFlight.isPresent()) return new Outcome.Accepted(inFlight.get().requestId(), key, inFlight.get().status());
+        if (inFlight.isPresent()) return new Outcome.Accepted(inFlight.get().requestId(), key, inFlight.get().status(), provisional);
 
         LocalDate deskBrd = clock.currentBrd(quota.deskId());
         if (!cmd.restatement() && cmd.brd().isBefore(deskBrd)) {
@@ -105,17 +106,8 @@ public class ValuationService {
         UUID requestId = UUID.randomUUID();
         var payload = new ValuationRequested(requestId, key, cmd.subjectRef(), cmd.level(), cmd.brd(), line.name(), line.engine(), cmd.lane(),
                 0, inputs.pqrId(), cmd.level() == SubjectLevel.ASSIGNMENT ? inputs.assignments().get(0).parId() : null, flatten(inputs));
-        store.insertPending(requestId, key, cmd.subjectRef(), cmd.level(), cmd.brd(), line.name(), line.engine(), cmd.lane(), cmd.source(), toJson(payload));
-        return new Outcome.Accepted(requestId, key, RequestStatus.PENDING);
-    }
-
-    /** All assignments must be approved: every one of them contributes to the value. Lists the offenders so the caller can act. */
-    private static void requireApproved(ValuationInputs inputs) {
-        List<String> unapproved = inputs.assignments().stream().filter(a -> !a.approved()).map(ValuationInputs.AssignmentInputs::assignmentRef).toList();
-        if (!unapproved.isEmpty()) {
-            throw new DomainException(409, "assignment-not-approved", "Assignments must be approved to be eligible for valuation")
-                    .with("subjectRef", inputs.subjectRef()).with("unapproved", unapproved.stream().collect(Collectors.joining(",")));
-        }
+        store.insertPending(requestId, key, cmd.subjectRef(), cmd.level(), cmd.brd(), line.name(), line.engine(), cmd.lane(), cmd.source(), toJson(payload), provisional);
+        return new Outcome.Accepted(requestId, key, RequestStatus.PENDING, provisional);
     }
 
     /** One flat view of the inputs for the engine: total quantity, and the components and parameters of every assignment. */

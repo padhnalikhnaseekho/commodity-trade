@@ -23,13 +23,14 @@ public class RequestStore {
     /** A row of gateway.valuation_request. {@code payload} is the complete, self-contained request as JSON. */
     public record RequestRow(UUID requestId, String requestKey, String subjectRef, SubjectLevel subjectLevel, LocalDate brd,
                              String functionalLine, ValuationEngine engine, Lane lane, String source, RequestStatus status, int attempts,
-                             String payload, String result, String error, Instant createdAt, Instant sentAt, Instant completedAt, int version) {}
+                             String payload, String result, String error, Instant createdAt, Instant sentAt, Instant completedAt, int version,
+                             boolean provisionalAtRequest) {}
 
     /** Outcome of a fail-or-retry transition: the lane whose slot to release, and whether it went back to PENDING or on to FAILED. */
     public record Transition(Lane lane, RequestStatus status) {}
 
     private static final String COLUMNS = "request_id, request_key, subject_ref, subject_level, brd, functional_line, engine, lane, source,"
-            + " status, attempts, payload::text, result::text, error, created_at, sent_at, completed_at, version";
+            + " status, attempts, payload::text, result::text, error, created_at, sent_at, completed_at, version, provisional";
 
     private final JdbcTemplate jdbc;
 
@@ -41,7 +42,7 @@ public class RequestStore {
         return new RequestRow(rs.getObject(1, UUID.class), rs.getString(2), rs.getString(3), SubjectLevel.valueOf(rs.getString(4)),
                 rs.getObject(5, LocalDate.class), rs.getString(6), ValuationEngine.valueOf(rs.getString(7)), Lane.valueOf(rs.getString(8)),
                 rs.getString(9), RequestStatus.valueOf(rs.getString(10)), rs.getInt(11), rs.getString(12), rs.getString(13), rs.getString(14),
-                instant(rs, 15), instant(rs, 16), instant(rs, 17), rs.getInt(18));
+                instant(rs, 15), instant(rs, 16), instant(rs, 17), rs.getInt(18), rs.getBoolean(19));
     }
 
     private static Instant instant(java.sql.ResultSet rs, int col) throws java.sql.SQLException {
@@ -86,10 +87,10 @@ public class RequestStore {
     // ---- writes ---------------------------------------------------------------------------------------------------
 
     public void insertPending(UUID requestId, String requestKey, String subjectRef, SubjectLevel level, LocalDate brd, String functionalLine,
-                              ValuationEngine engine, Lane lane, String source, String payloadJson) {
+                              ValuationEngine engine, Lane lane, String source, String payloadJson, boolean provisional) {
         jdbc.update("INSERT INTO gateway.valuation_request (request_id, request_key, subject_ref, subject_level, brd, functional_line, engine,"
-                        + " lane, source, status, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?::jsonb)",
-                requestId, requestKey, subjectRef, level.name(), brd, functionalLine, engine.name(), lane.name(), source, payloadJson);
+                        + " lane, source, status, payload, provisional) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?::jsonb, ?)",
+                requestId, requestKey, subjectRef, level.name(), brd, functionalLine, engine.name(), lane.name(), source, payloadJson, provisional);
     }
 
     /**

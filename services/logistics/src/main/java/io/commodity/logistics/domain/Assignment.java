@@ -10,7 +10,7 @@ import java.math.BigDecimal;
  * separate, out of P0 scope). Valuation and close of books work at this grain.
  *
  * <p>INVARIANT (P0.2, domain code): sum(assignment.qty) in a quota never exceeds quota.qty.
- * Only the lifecycle {@link AssignmentStatus} lives here. Approval (for valuation and P&amp;L eligibility) is
+ * Only the lifecycle {@link AssignmentStatus} lives here. Approval (which must be complete before desk close) is
  * owned by pricing, and changing it does not cut a QAG revision.
  */
 @Entity
