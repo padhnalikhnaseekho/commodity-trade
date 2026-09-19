@@ -7,6 +7,7 @@ import io.commodity.contracts.events.QagRevisionEvent;
 import io.commodity.contracts.events.ShippingOperationalEvent;
 import io.commodity.contracts.events.Topics;
 import io.commodity.contracts.lookup.BusinessDayClock;
+import io.commodity.contracts.lookup.FixationDirectory;
 import io.commodity.contracts.lookup.QuotaDirectory;
 import io.commodity.contracts.lookup.QuotaView;
 import io.commodity.contracts.refs.AssignmentRef;
@@ -47,18 +48,20 @@ public class AssignmentService {
     private final QagRevisionRepository revisions;
     private final QagRevisionMemberRepository members;
     private final QuotaDirectory quotaDirectory;
+    private final FixationDirectory fixations;
     private final BusinessDayClock clock;
     private final OutboxWriter outbox;
     private final ObjectMapper json;
     private final JdbcTemplate jdbc;
 
     public AssignmentService(AssignmentRepository assignments, QagRevisionRepository revisions,
-                             QagRevisionMemberRepository members, QuotaDirectory quotaDirectory, BusinessDayClock clock,
+                             QagRevisionMemberRepository members, QuotaDirectory quotaDirectory, FixationDirectory fixations, BusinessDayClock clock,
                              OutboxWriter outbox, ObjectMapper json, JdbcTemplate jdbc) {
         this.assignments = assignments;
         this.revisions = revisions;
         this.members = members;
         this.quotaDirectory = quotaDirectory;
+        this.fixations = fixations;
         this.clock = clock;
         this.outbox = outbox;
         this.json = json;
@@ -111,6 +114,13 @@ public class AssignmentService {
         boolean changes = qty.compareTo(a.getQty()) != 0 || status != a.getStatus();
         if (!changes) {
             return revisions.findFirstByQuotaRefOrderByIdDesc(quotaRef).orElseThrow().getQagrId();
+        }
+        // Owner rule: while an assignment has a price fixation its quantity cannot be edited. Fixations belong to pricing,
+        // so we ask through a port. Checked only when the quantity really changes.
+        if (qty.compareTo(a.getQty()) != 0 && fixations.hasFixation(assignmentRef)) {
+            throw new DomainException(409, "assignment-has-fixation", "Quantity cannot be edited while the assignment has a price fixation")
+                    .with("assignmentRef", assignmentRef).with("currentQty", a.getQty().toPlainString())
+                    .with("requestedQty", qty.toPlainString());
         }
         if (status == AssignmentStatus.ACTIVE) { // still holding quantity: the cap applies to the new value
             List<Assignment> all = assignments.findByQuotaRefOrderBySeq(quotaRef);

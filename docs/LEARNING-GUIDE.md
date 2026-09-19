@@ -13,4 +13,11 @@ Filled in as each phase lands.
 | Why publish the diff instead of a notification? | `QagRevisionEvent`, `QagDiff` |
 | How do concurrent writers not fork the revision chain? | `AssignmentService.lockQuota`, `AssignmentApiTest.concurrentWriters...` |
 | How do services read each other's data without coupling? | `contracts/.../lookup/*`, `HttpQuotaDirectory` |
+| What was your biggest scaling problem and fix? | `StructuralSharingRevisionWriter`, `./gradlew :benchmark:run`, `docs/phase-notes/P0.3.md` |
+| How do you know the optimisation did not change behaviour? | `EquivalencePropertyTest` (and the broken-writer test that proves it can fail) |
+| How do you restate a number from a past date? | `RevisionStore.asOf`, `RevisionWritersTest` determinism and monotonicity tests |
+| Why must revisions be insert-only? | `pricing V1__pricing_schema.sql` trigger, `PricingRepositoryTest`, structural sharing safety |
+| What if the same event arrives twice, or a bad one? | `QagRevisionHandler`, `DedupStore`, `QagRevisionConsumerTest` |
+| How is over-fixation prevented under concurrency? | `PricingService.mutate` lock, `PricingApiTest.concurrentFixations...` |
+| Where does approval live and why? | `V2__approval_dedup_and_indexes.sql`, `PricingApiTest.approvalIsAnInsertOnlyRecord...` |
 | (more added per phase) | |

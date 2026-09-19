@@ -10,6 +10,7 @@ import com.jayway.jsonpath.JsonPath;
 import io.commodity.contracts.events.QagRevisionEvent;
 import io.commodity.contracts.events.Topics;
 import io.commodity.contracts.lookup.BusinessDayClock;
+import io.commodity.contracts.lookup.FixationDirectory;
 import io.commodity.contracts.lookup.QuotaDirectory;
 import io.commodity.contracts.lookup.QuotaView;
 import java.math.BigDecimal;
@@ -47,11 +48,13 @@ class AssignmentApiTest {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
 
     static final Map<String, QuotaView> QUOTAS = new ConcurrentHashMap<>();
+    static final Set<String> FIXATED = ConcurrentHashMap.newKeySet();
     static final AtomicReference<LocalDate> BRD = new AtomicReference<>(LocalDate.of(2026, 9, 18));
 
     @TestConfiguration
     static class Ports {
         @Bean QuotaDirectory quotaDirectory() { return ref -> Optional.ofNullable(QUOTAS.get(ref)); }
+        @Bean FixationDirectory fixations() { return FIXATED::contains; }
         @Bean BusinessDayClock clock() { return desk -> BRD.get(); }
     }
 
@@ -203,6 +206,28 @@ class AssignmentApiTest {
         mvc.perform(patch("/api/assignments/106.1.1").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"qty\":\"5\",\"changeKind\":\"ALLOCATION\"}"))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.type").value(endsWith("assignment-not-active")));
+    }
+
+    // PROVES the owner rule: with a fixation present the quantity cannot be edited (409 with the numbers, nothing written),
+    // and the block is about quantity only, so it does not stop an edit that leaves quantity unchanged.
+    @Test
+    void quantityCannotBeEditedWhileAFixationExists() throws Exception {
+        quota("111.1", "1000");
+        add("111.1", "100");
+        FIXATED.add("111.1.1");
+        int revisions = count("SELECT count(*) FROM logistics.qag_revision WHERE quota_ref = '111.1'");
+
+        mvc.perform(patch("/api/assignments/111.1.1").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"qty\":\"60\",\"changeKind\":\"ALLOCATION\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://commodity.demo/errors/assignment-has-fixation"))
+                .andExpect(jsonPath("$.currentQty").value("100.0000")).andExpect(jsonPath("$.requestedQty").value("60.0000"));
+        assertThat(count("SELECT count(*) FROM logistics.qag_revision WHERE quota_ref = '111.1'")).isEqualTo(revisions);
+        assertThat(count("SELECT count(*) FROM logistics.assignment WHERE assignment_ref = '111.1.1' AND qty = 100")).isEqualTo(1);
+
+        FIXATED.remove("111.1.1"); // once the fixation is gone the edit is allowed again
+        mvc.perform(patch("/api/assignments/111.1.1").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"qty\":\"60\",\"changeKind\":\"ALLOCATION\"}")).andExpect(status().isOk());
     }
 
     @Test

@@ -17,3 +17,12 @@ Each entry will point at the class that models it. Filled in as phases land.
 - **QAG diff**: added / removed / modified between revisions. `logistics/.../domain/QagDiff.java`.
 - **Outbox**: event rows written with the business change, shipped later. `platform/.../outbox/`.
 - **Envelope**: eventId, occurredAt, brd, source, schemaVersion, traceparent as Kafka headers. `KafkaMessageSink`.
+
+## Added in P0.3
+- **Structural sharing / copy-on-write revisions**: unchanged assignments are pointed at, not copied. `StructuralSharingRevisionWriter`.
+- **Content hash**: SHA-256 over an assignment's fields and its children's hashes; equal hash = equal content. `ContentHasher`.
+- **Quota revision member (the sharing table)**: which assignment revisions a quota revision points at. `quota_revision_member`.
+- **Fixation**: pricing part of an assignment's quantity at a price (a price component). Unpriced quantity = quantity - fixed, derived.
+- **Over-fixed**: fixed quantity exceeds the assignment quantity; only reachable through the logistics/pricing race, reported not stored.
+- **Approval**: pricing's insert-only decision that gates eligibility for valuation and P&L. `assignment_approval`.
+- **Dedup marker / DLQ**: `processed_event` (consumer-side eventId dedup) and `<topic>.dlq` (parked poison messages).

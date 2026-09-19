@@ -6,6 +6,7 @@ val testcontainersVersion = "1.21.4"
 
 // Cross-cutting infrastructure only (outbox, eventing, error shape). No domain concepts here.
 dependencies {
+    api(project(":contracts"))
     api(platform("org.springframework.boot:spring-boot-dependencies:$bootVersion"))
     api("org.springframework:spring-jdbc")
     api("org.springframework:spring-tx")
@@ -19,6 +20,7 @@ dependencies {
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
     testImplementation("org.testcontainers:redpanda")
+    testImplementation("org.springframework:spring-test")
     testRuntimeOnly("org.postgresql:postgresql")
     testRuntimeOnly("ch.qos.logback:logback-classic")
 }

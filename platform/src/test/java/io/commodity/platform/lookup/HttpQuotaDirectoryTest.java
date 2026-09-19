@@ -1,4 +1,4 @@
-package io.commodity.logistics.service;
+package io.commodity.platform.lookup;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -14,7 +14,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
-/** The HTTP adapter behind the QuotaDirectory port, against a mocked trade service (no network, no Spring context). */
+/** The HTTP adapters behind the lookup ports, against mocked services (no network, no Spring context). */
 class HttpQuotaDirectoryTest {
 
     private final RestClient.Builder builder = RestClient.builder();
@@ -48,5 +48,19 @@ class HttpQuotaDirectoryTest {
     void aServerErrorPropagatesInsteadOfLookingLikeAMissingQuota() {
         server.expect(requestTo("http://trade.invalid/api/quotas/1.1")).andRespond(withServerError());
         assertThatThrownBy(() -> directory().find("1.1")).isInstanceOf(RestClientException.class);
+    }
+
+    // PROVES the fixation adapter: 404 means "pricing has not seen it yet" = no fixation; an outage is NOT "no fixation".
+    @Test
+    void fixationAdapterMapsAnswersAndFailsClosedOnOutage() {
+        var fixation = new HttpFixationDirectory(builder.baseUrl("http://pricing.invalid").build());
+        server.expect(requestTo("http://pricing.invalid/api/assignments/1.1.1/fixation")).andRespond(withSuccess(
+                "{\"assignmentRef\":\"1.1.1\",\"fixed\":true}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://pricing.invalid/api/assignments/1.1.2/fixation")).andRespond(withStatus(HttpStatus.NOT_FOUND));
+        server.expect(requestTo("http://pricing.invalid/api/assignments/1.1.3/fixation")).andRespond(withServerError());
+
+        assertThat(fixation.hasFixation("1.1.1")).isTrue();
+        assertThat(fixation.hasFixation("1.1.2")).isFalse();
+        assertThatThrownBy(() -> fixation.hasFixation("1.1.3")).isInstanceOf(RestClientException.class);
     }
 }
