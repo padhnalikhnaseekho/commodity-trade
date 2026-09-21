@@ -20,33 +20,33 @@ The pitch is organised by improvement, and none of those docs indexes patterns b
 
 | # | Pattern | Category | Main file | Proof |
 |---|---|---|---|---|
-| 1 | Transactional outbox + polling publisher | Messaging | `platform/outbox/OutboxWriter`, `OutboxPublisher` | `OutboxPublisherTest` |
-| 2 | Idempotent consumer | Messaging | `platform/eventing/DedupStore`, `pricing/service/QagRevisionHandler` | `QagRevisionConsumerTest` |
-| 3 | Retry then dead-letter queue | Messaging | `platform/eventing/DlqErrorHandler` | `GatewayFlowTest`, `QagRevisionConsumerTest` |
-| 4 | Event-carried state transfer | Messaging | `logistics/domain/QagDiff`, `QagRevisionMember`, `pricing/service/PricingPublisher` | `AssignmentApiTest` |
-| 5 | Partition key = aggregate id | Messaging | `platform/outbox/OutboxMessage` | `OutboxPublisherTest` |
-| 6 | Ports and adapters | Structure | `contracts/lookup/*`, `platform/lookup/Http*`, `services/stubs` | `HttpQuotaDirectoryTest` |
-| 7 | Modular monolith, profile-selected modules | Structure | `gateway/GatewayModule`, `stubs/StubsModule`, root `build.gradle.kts` | `ProfileIsolationTest` |
-| 8 | Functional core, imperative shell | Structure | `domain/` packages vs `service/` packages | `QuotaQuantityPolicyTest`, `FixationAndEventTest` |
-| 9 | Immutable, insert-only revisions | Data | `pricing/domain/QuotaRevision`, DB trigger | `PricingRepositoryTest` |
-| 10 | Structural sharing (copy-on-write, content-addressed) | Data | `pricing/service/StructuralSharingRevisionWriter`, `domain/ContentHasher` | `EquivalencePropertyTest`, `ContentHasherTest` |
-| 11 | Strategy behind a config switch | Data | `pricing/service/RevisionWriter` | `EquivalencePropertyTest` |
-| 12 | Derived values never stored | Data | `pricing/domain/AssignmentContent` | `FixationAndEventTest` |
-| 13 | Per-aggregate advisory lock | Concurrency | `PricingService`, `AssignmentService` | ten-parallel-add and two-fixation tests |
-| 14 | Compare-and-set state machine | Concurrency | `gateway/repository/RequestStore`, `service/ReplyHandler` | `GatewayRestartTest` |
-| 15 | Idempotency key from immutable inputs | Resilience | `gateway/domain/RequestKey` | `RequestKeyTest`, `GatewayFlowTest` |
-| 16 | Bulkhead (per-lane in-flight budget) | Resilience | `gateway/domain/LaneLimiter`, `service/Dispatcher` | `LaneLimiterTest`, `GatewayLanesTest` |
-| 17 | Watchdog with bounded retry | Resilience | `gateway/service/Watchdog` | `GatewayRestartTest` |
-| 18 | Fail closed on lookups; timeouts on every call | Resilience | `platform/lookup/HttpFixationDirectory`, `HttpClients` | `AssignmentApiTest` |
-| 19 | Materialised read model (projection) | Read side | `blotter/service/BlotterProjector`, `domain/RowView` | `BlotterStreamTest` |
-| 20 | Delta push: JSON Patch, coalescing, resumable SSE | Read side | `blotter/domain/RowPatch`, `service/RowBroadcaster` | `RowPatchTest`, `RowBroadcasterTest` |
-| 21 | Read-through cache | Read side | `blotter/service/CachedQuotaLookup` | `BlotterStreamTest` |
-| 22 | Reference data drives routing | Domain | `contracts/lookup/FunctionalLine*`, `stubs/srd` | gateway routing tests |
-| 23 | Hierarchical composite keys | Domain | `contracts/refs/TradeRef`, `QuotaRef`, `AssignmentRef` | ref tests |
-| 24 | Problem Details error translation | API | `platform/error/DomainException`, `ProblemAdvice` | API tests asserting 409 bodies |
-| 25 | Sequence, not timestamp, for ordering | Data | pricing V4 and logistics V4 migrations | `RevisionWritersTest` |
+| 1 | Transactional outbox + polling publisher | Messaging | `platform/outbox/OutboxWriter`, `OutboxPublisher` | `OutboxPublisherTest` (`rolledBackTransactionPublishesNothing`, `failedDeliveryStaysUnsentAndIsRetriedInOrder`) |
+| 2 | Idempotent consumer | Messaging | `platform/eventing/DedupStore`, `pricing/service/QagRevisionHandler` | `QagRevisionConsumerTest.aRedeliveredEventIsAppliedOnce`, `PricingApiTest.aDuplicateEventIsAppliedOnceAndAFailedAttemptCanBeRetried` |
+| 3 | Retry then dead-letter queue | Messaging | `platform/eventing/DlqErrorHandler` | `QagRevisionConsumerTest.aPoisonMessageGoesToTheDlqWithoutStallingThePartition`, `GatewayFlowTest.aMalformedReplyGoesToTheDlqAndTheGatewayKeepsWorking` |
+| 4 | Event-carried state transfer | Messaging | `logistics/domain/QagDiff`, `QagRevisionMember`, `pricing/service/PricingPublisher` | `AssignmentApiTest` (`addingAnAssignmentCuts...`, `modifyingOneOfTwenty...`), `PricingApiTest.everyPricingChangeAndApprovalPublishesAQuotaSnapshot` |
+| 5 | Partition key = aggregate id | Messaging | `platform/outbox/OutboxMessage` | `OutboxPublisherTest` proves the key is carried and per-key order kept; choosing the aggregate id is by convention, not tested |
+| 6 | Ports and adapters | Structure | `contracts/lookup/*`, `platform/lookup/Http*`, `services/stubs` | `HttpQuotaDirectoryTest`, `GatewayFlowTest.theEngineRequestIsSelfContained` |
+| 7 | Modular monolith, profile-selected modules | Structure | `gateway/GatewayModule`, `stubs/StubsModule`, root `build.gradle.kts` | `ProfileIsolationTest`; the boundary rule is checked by the root build, not a test |
+| 8 | Functional core, imperative shell | Structure | `domain/` packages vs `service/` packages | `QuotaQuantityPolicyTest`, `FixationAndEventTest`, `RowPatchTest`, `LaneLimiterTest` |
+| 9 | Immutable, insert-only revisions | Data | `pricing/domain/QuotaRevision`, DB trigger | `PricingRepositoryTest.databaseRejectsUpdateAndDeleteOnRevisionTables` |
+| 10 | Structural sharing (copy-on-write, content-addressed) | Data | `pricing/service/StructuralSharingRevisionWriter`, `domain/ContentHasher` | `EquivalencePropertyTest`, `ContentHasherTest`, `RevisionWritersTest.changingOneOfTwentyAssignmentsWritesFewerRowsUnderSharing` |
+| 11 | Strategy behind a config switch | Data | `pricing/service/RevisionWriter` | `EquivalencePropertyTest`, `RevisionWritersTest.resolutionIsIdenticalUnderBothStrategies` |
+| 12 | Derived values never stored | Data | `pricing/domain/AssignmentContent` | `ContentHasherTest.pricedUnpricedAndOverFixedAreDerived`, `PricingApiTest.approvalIsAnInsertOnlyRecordAndDoesNotCutARevision` |
+| 13 | Per-aggregate advisory lock | Concurrency | `PricingService`, `AssignmentService` | `AssignmentApiTest.concurrentWritersToOneQuotaProduceALinearChainAndDistinctRefs`, `PricingApiTest.concurrentFixationsCannotTogetherOverFixTheAssignment` |
+| 14 | Compare-and-set state machine | Concurrency | `gateway/repository/RequestStore`, `service/ReplyHandler` | `GatewayRestartTest`, `GatewayFlowTest.aDuplicateReplyChangesNothing` |
+| 15 | Idempotency key from immutable inputs | Resilience | `gateway/domain/RequestKey` | `RequestKeyTest`, `GatewayFlowTest.submittingTheSameRequestTwiceCallsTheEngineOnce` |
+| 16 | Bulkhead (per-lane in-flight budget) | Resilience | `gateway/domain/LaneLimiter`, `service/Dispatcher` | `LaneLimiterTest`, `GatewayLanesTest.saturatingBulkLeavesInteractiveInsideItsTimeout` |
+| 17 | Watchdog with bounded retry | Resilience | `gateway/service/Watchdog` | `GatewayFlowTest` (`aLostReplyIsRetriedByTheWatchdogAndThenCompletes`, `aRequestThatNeverGetsAReplyEndsFailedAfterThreeAttempts`) |
+| 18 | Fail closed on lookups; timeouts on every call | Resilience | `platform/lookup/HttpFixationDirectory`, `HttpClients` | `HttpQuotaDirectoryTest` (`fixationAdapterMapsAnswersAndFailsClosedOnOutage`, `aServerErrorPropagatesInsteadOfLookingLikeAMissingQuota`); timeouts themselves are untested |
+| 19 | Materialised read model (projection) | Read side | `blotter/service/BlotterProjector`, `domain/RowView` | `BlotterProjectorTest`, `BlotterStreamTest.aPricingChangeReachesAnOpenBlotterWithinASecond` |
+| 20 | Delta push: JSON Patch, coalescing, resumable SSE | Read side | `blotter/domain/RowPatch`, `service/RowBroadcaster` | `RowPatchTest.mergedPatchesAreEquivalentToTheSequence`, `RowBroadcasterTest` |
+| 21 | Read-through cache | Read side | `blotter/service/CachedQuotaLookup` | no dedicated test; exercised inside `BlotterProjectorTest` |
+| 22 | Reference data drives routing | Domain | `contracts/lookup/FunctionalLine*`, `stubs/srd` | `InMemoryFunctionalLineDirectoryTest`, `GatewayFlowTest.theFunctionalLineDecidesTheEngine` |
+| 23 | Hierarchical composite keys | Domain | `contracts/refs/TradeRef`, `QuotaRef`, `AssignmentRef` | `RefsTest` |
+| 24 | Problem Details error translation | API | `platform/error/DomainException`, `ProblemAdvice` | `AssignmentApiTest.exceedingTheQuotaIs409WithNumbersAndLeavesNoTrace`, `PricingApiTest.overFixationIs409WithTheOffendingQuantities` |
+| 25 | Sequence, not timestamp, for ordering | Data | pricing V4 and logistics V4 migrations | `RevisionWritersTest.aLaterRevisionWithAnEarlierTimestampStillWins` |
 
-Test names are where I verified them; if one has moved, `grep -rn` for the class name.
+Every test named here was found by reading the test sources. I did not run them, so "proof" means the test exists and its name states the claim. Gaps are called out in the row.
 
 ## Messaging
 
